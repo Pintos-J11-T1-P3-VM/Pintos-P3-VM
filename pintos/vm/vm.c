@@ -66,6 +66,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 				initializer = file_backed_initializer;
 				break;
 			default:
+				free (page);
 				goto err;
 		}
 
