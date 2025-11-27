@@ -3,3 +3,4 @@ pintos/vm/build/
 pintos/userprog/build/
 pintos/threads/build/
 pintos/filesys/build/
+_codeql_detected_source_root
