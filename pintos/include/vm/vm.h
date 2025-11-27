@@ -46,6 +46,7 @@ struct page {
 	struct frame *frame;   /* Back reference for frame */
 
 	/* Your implementation */
+	bool writable;         /* True if the page is writable */
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
