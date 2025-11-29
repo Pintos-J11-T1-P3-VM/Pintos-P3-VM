@@ -3,6 +3,7 @@
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
+#include "hash.h"
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -169,9 +170,23 @@ static bool vm_do_claim_page(struct page* page)
     return swap_in(page, frame->kva);
 }
 
+unsigned page_hash(const struct hash_elem* p_h_e, void* aux UNUSED)
+{
+    struct page* page = hash_entry(p_h_e, struct page, hash_elem);
+    return hash_bytes(page->va, sizeof(page->va));
+}
+
+bool page_less(const struct hash_elem* a, const struct hash_elem* b, void* aux UNUSED)
+{
+    struct page* page_a = hash_entry(a, struct page, hash_elem);
+    struct page* page_b = hash_entry(a, struct page, hash_elem);
+    return page_a->va < page_b->va;
+}
+
 /* Initialize new supplemental page table */
 void supplemental_page_table_init(struct supplemental_page_table* spt UNUSED)
 {
+    hash_init(&spt->hash_table, page_hash, page_less, NULL);
 }
 
 /* Copy supplemental page table from src to dst */
