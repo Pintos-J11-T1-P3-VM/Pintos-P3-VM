@@ -31,7 +31,7 @@ static bool load(const char* file_name, struct intr_frame* if_);
 static void initd(void* f_name);
 static void __do_fork(void*);
 
-/*fd 비교 함수, 용병*/
+/*fd 비교 함수*/
 static bool cmp_fd_less(const struct list_elem* a, const struct list_elem* b, void* aux UNUSED)
 {
     struct descriptor* fd_a = list_entry(a, struct descriptor, desc_elem);
@@ -62,7 +62,6 @@ tid_t process_create_initd(const char* file_name)
     if (fn_copy == NULL)
         return TID_ERROR;
     strlcpy(fn_copy, file_name, PGSIZE);
-    // 모두가 행복한 세상
     int i = 0;
     while (file_name[i] != ' ' && file_name[i] != '\0') {
         copy_name[i] = file_name[i];
@@ -112,9 +111,6 @@ tid_t process_fork(const char* name, struct intr_frame* if_)
             break;
         }
     }
-    // error에서 exit_num -1 로 해줬으면 fork실패. 고로 sema_up해주고 list_remove
-    // sema_up안해주니까 자식 계속 살아있음;;;;
-    // 자식 살아있어서 4kb 공간 계속 잡고 있으니까 134개만들고 또 만드니까 132개 밖에 못만든다고 죽음
     if (child->exit_num == -1) {
         sema_up(&child->waiting_parents);
         list_remove(&child->child_elem);
@@ -177,7 +173,7 @@ static void __do_fork(void* aux)
     struct intr_frame* parent_if;
     bool succ = true;
 
-    // aux의 tf를 넘겨준다...?
+    // aux의 tf를 넘겨준다
     parent_if = &parent->parent_if;
     /* 1. Read the cpu context to local stack. */
     memcpy(&if_, parent_if, sizeof(struct intr_frame));
@@ -204,15 +200,6 @@ static void __do_fork(void* aux)
      * TODO:       in include/filesys/file.h. Note that parent should not return
      * TODO:       from the fork() until this function successfully duplicates
      * TODO:       the resources of parent.*/
-
-    // for (int i = 0; i < FILE_MAX; i++) {
-    // 	struct file *file = parent->file_descrs[i];
-    // 	if (file == NULL)
-    // 		continue;
-    // 	if (file != stdin_f && file != stdout_f)
-    // 		file = file_duplicate(file);
-    // 	current->file_descrs[i] = file;
-    // }
     fd_to_file_for_remove(current, 0);
     fd_to_file_for_remove(current, 1);
     struct list_elem* iter;
@@ -455,7 +442,6 @@ static bool load(const char* file_name, struct intr_frame* if_)
     off_t file_ofs;
     bool success = false;
     int i;
-    // 신규 처리 파일명 이상해서 안들어간다능
     char* save;
     char file_name_cp[128];
     strlcpy(file_name_cp, file_name, 128);
@@ -585,10 +571,6 @@ static bool load(const char* file_name, struct intr_frame* if_)
     if_->R.rsi = (uint64_t)(if_->rsp + 8);
     /* TODO: Your code goes here.
      * TODO: Implement argument passing (see project2/argument_passing.html). */
-    // while(*save != NULL)
-    // {
-    // 	if (*save)
-    // }
     // hex_dump(if_->rsp, if_->rsp, USER_STACK - if_->rsp, true);
     success = true;
 
@@ -754,6 +736,14 @@ static bool lazy_load_segment(struct page* page, void* aux)
     /* TODO: Load the segment from the file */
     /* TODO: This called when the first page fault occurs on address VA. */
     /* TODO: VA is available when calling this function. */
+    struct lazy_load_aux* arg = (struct lazy_load_aux*)aux;
+    file_seek(arg->file, arg->ofs);
+    if (file_read(arg->file, page->frame->kva, arg->page_read_bytes) != (int)arg->page_read_bytes) {
+        palloc_free_page(page);
+        return false;
+    }
+    memset(page->frame->kva + arg->page_read_bytes, 0, arg->page_zero_bytes);
+    return true;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -785,8 +775,13 @@ static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t 
         size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
         /* TODO: Set up aux to pass information to the lazy_load_segment. */
-        void* aux = NULL;
-        if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, aux))
+        struct lazy_load_aux* lazy_load_aux = malloc(sizeof(lazy_load_aux));
+        lazy_load_aux->file = file;
+        lazy_load_aux->ofs = ofs;
+        lazy_load_aux->page_read_bytes = page_read_bytes;
+        lazy_load_aux->page_zero_bytes = page_zero_bytes;
+
+        if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, lazy_load_aux))
             return false;
 
         /* Advance. */
