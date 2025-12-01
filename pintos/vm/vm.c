@@ -173,13 +173,13 @@ static bool vm_do_claim_page(struct page* page)
 unsigned page_hash(const struct hash_elem* p_h_e, void* aux UNUSED)
 {
     struct page* page = hash_entry(p_h_e, struct page, hash_elem);
-    return hash_bytes(page->va, sizeof(page->va));
+    return hash_bytes(&page->va, sizeof(page->va));
 }
 
 bool page_less(const struct hash_elem* a, const struct hash_elem* b, void* aux UNUSED)
 {
     struct page* page_a = hash_entry(a, struct page, hash_elem);
-    struct page* page_b = hash_entry(a, struct page, hash_elem);
+    struct page* page_b = hash_entry(b, struct page, hash_elem);
     return page_a->va < page_b->va;
 }
 
