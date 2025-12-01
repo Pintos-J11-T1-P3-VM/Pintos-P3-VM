@@ -45,7 +45,6 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void* upage, bool writabl
 {
 
     ASSERT(VM_TYPE(type) != VM_UNINIT)
-
     struct supplemental_page_table* spt = &thread_current()->spt;
 
     /* Check wheter the upage is already occupied or not. */
@@ -132,7 +131,13 @@ static struct frame* vm_get_frame(void)
 {
     struct frame* frame = NULL;
     /* TODO: Fill this function. */
-
+    void* kva = palloc_get_page(PAL_USER);
+    if (kva == NULL) {
+        PANIC("todo");
+    }
+    frame = (struct frame*)malloc(sizeof(struct frame));
+    frame->kva = kva;
+    frame->page = NULL;
     ASSERT(frame != NULL);
     ASSERT(frame->page == NULL);
     return frame;
@@ -173,7 +178,9 @@ bool vm_claim_page(void* va UNUSED)
 {
     struct page* page = NULL;
     /* TODO: Fill this function */
-
+    page = spt_find_page(&thread_current()->spt, va);
+    if (page == NULL)
+        return false;
     return vm_do_claim_page(page);
 }
 
@@ -187,6 +194,8 @@ static bool vm_do_claim_page(struct page* page)
     page->frame = frame;
 
     /* TODO: Insert page table entry to map page's VA to frame's PA. */
+    struct thread* current = thread_current();
+    pml4_set_page(current->pml4, page->va, frame->kva, page->writable);
 
     return swap_in(page, frame->kva);
 }
