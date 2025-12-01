@@ -53,8 +53,21 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void* upage, bool writabl
         /* TODO: Create the page, fetch the initialier according to the VM type,
          * TODO: and then create "uninit" page struct by calling uninit_new. You
          * TODO: should modify the field after calling the uninit_new. */
-
         /* TODO: Insert the page into the spt. */
+        struct page* p = (struct page*)malloc(sizeof(struct page));
+        bool (*page_initializer)(struct page*, enum vm_type, void*);
+
+        switch (VM_TYPE(type)) {
+        case VM_ANON:
+            page_initializer = anon_initializer;
+            break;
+        case VM_FILE:
+            page_initializer = file_backed_initializer;
+            break;
+        }
+        uninit_new(p, upage, init, type, aux, page_initializer);
+        p->writable = writable;
+        return spt_insert_page(spt, p);
     }
 err:
     return false;
@@ -65,17 +78,25 @@ struct page* spt_find_page(struct supplemental_page_table* spt UNUSED, void* va 
 {
     struct page* page = NULL;
     /* TODO: Fill this function. */
+    struct hash_elem* hash_e;
 
-    return page;
+    page = (struct page*)malloc(sizeof(struct page));
+    page->va = pg_round_down(va);
+    hash_e = hash_find(&spt->hash_table, &page->hash_elem);
+    free(page);
+    if (hash_e == NULL)
+        return NULL;
+    else
+        return hash_entry(hash_e, struct page, hash_elem);
 }
 
 /* Insert PAGE into spt with validation. */
 bool spt_insert_page(struct supplemental_page_table* spt UNUSED, struct page* page UNUSED)
 {
-    int succ = false;
     /* TODO: Fill this function. */
-
-    return succ;
+    if (hash_insert(&spt->hash_table, &page->hash_elem) == NULL)
+        return true;
+    return false;
 }
 
 void spt_remove_page(struct supplemental_page_table* spt, struct page* page)
