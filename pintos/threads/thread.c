@@ -202,55 +202,47 @@ tid_t thread_create(const char* name, int priority, thread_func* function, void*
     if (t == NULL)
         return TID_ERROR;
 
-                /* Initialize thread. */
+    /* Initialize thread. */
 
-                init_thread(t, name, priority);
+    init_thread(t, name, priority);
 
-                tid = t->tid = allocate_tid();
+    tid = t->tid = allocate_tid();
 
-            
+    // 하....,,,,,....
 
-                // 하....,,,,,....
+    struct descriptor* stdin_descript = calloc(1, sizeof(struct descriptor));
 
-                struct descriptor* stdin_descript = calloc(1, sizeof(struct descriptor));
+    if (stdin_descript == NULL) {
 
-                if (stdin_descript == NULL) {
+        return -1;
+    }
 
-                    return -1;
+    stdin_descript->fd = 0;
 
-                }
+    stdin_descript->file = stdin_f;
 
-                stdin_descript->fd = 0;
+    stdin_descript->file;
 
-                stdin_descript->file = stdin_f;
+    list_push_back(&(t->descrs_t), &(stdin_descript->desc_elem));
 
-                stdin_descript->file;
+    struct descriptor* stdout_descript = calloc(1, sizeof(struct descriptor));
 
-                list_push_back(&(t->descrs_t), &(stdin_descript->desc_elem));
+    if (stdout_descript == NULL) {
 
-            
+        return -1;
+    }
 
-                struct descriptor* stdout_descript = calloc(1, sizeof(struct descriptor));
+    stdout_descript->fd = 1;
 
-                if (stdout_descript == NULL) {
+    stdout_descript->file = stdout_f;
 
-                    return -1;
+    stdout_descript->file;
 
-                }
+    list_push_back(&(t->descrs_t), &(stdout_descript->desc_elem));
 
-                stdout_descript->fd = 1;
+    // thread
 
-                stdout_descript->file = stdout_f;
-
-                stdout_descript->file;
-
-                list_push_back(&(t->descrs_t), &(stdout_descript->desc_elem));
-
-            
-
-                // thread
-
-                struct thread* parent = thread_current();
+    struct thread* parent = thread_current();
     t->parent = parent;
     list_push_front(&(parent->childs), &(t->child_elem));
     /* Call the kernel_thread if it scheduled.

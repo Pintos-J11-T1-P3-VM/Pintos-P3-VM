@@ -822,9 +822,8 @@ static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t 
         aux->ofs = ofs;
         aux->read_bytes = page_read_bytes;
         aux->zero_bytes = page_zero_bytes;
-        
-        if (!vm_alloc_page_with_initializer(VM_FILE, upage, writable, lazy_load_segment, aux))
-        {
+
+        if (!vm_alloc_page_with_initializer(VM_FILE, upage, writable, lazy_load_segment, aux)) {
             file_close(dup_file);
             free(aux);
             return false;
@@ -852,8 +851,7 @@ static bool setup_stack(struct intr_frame* if_)
         if (vm_claim_page(stack_bottom)) {
             if_->rsp = USER_STACK;
             success = true;
-        }
-        else {
+        } else {
             struct page* page = spt_find_page(&thread_current()->spt, stack_bottom);
             if (page)
                 spt_remove_page(&thread_current()->spt, page);

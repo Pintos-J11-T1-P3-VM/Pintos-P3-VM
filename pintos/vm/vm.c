@@ -26,7 +26,7 @@ void vm_init(void)
     register_inspect_intr();
     /* DO NOT MODIFY UPPER LINES. */
     /* TODO: Your code goes here. */
-	supplemental_page_table_init(&thread_current()->spt);
+    supplemental_page_table_init(&thread_current()->spt);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -47,14 +47,13 @@ enum vm_type page_get_type(struct page* page)
 static struct frame* vm_get_victim(void);
 static bool vm_do_claim_page(struct page* page);
 static struct frame* vm_evict_frame(void);
-static void page_destroy_func(struct hash_elem *e, void *aux UNUSED);
+static void page_destroy_func(struct hash_elem* e, void* aux UNUSED);
 
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
  * `vm_alloc_page`. */
 bool vm_alloc_page_with_initializer(enum vm_type type, void* upage, bool writable, vm_initializer* init, void* aux)
 {
-
     ASSERT(VM_TYPE(type) != VM_UNINIT)
 
     struct supplemental_page_table* spt = &thread_current()->spt;
@@ -96,7 +95,7 @@ struct page* spt_find_page(struct supplemental_page_table* spt, void* va)
     struct page p;
     memset(&p, 0, sizeof p);
     p.va = page_va;
-    
+
     struct hash_elem* e = hash_find(&spt->pages, &p.elem);
     if (e == NULL)
         return NULL;
@@ -106,7 +105,7 @@ struct page* spt_find_page(struct supplemental_page_table* spt, void* va)
 /* Insert PAGE into spt with validation. */
 bool spt_insert_page(struct supplemental_page_table* spt, struct page* page)
 {
-    if(hash_insert(&spt->pages, &page->elem))
+    if (hash_insert(&spt->pages, &page->elem))
         return false;
     return true;
 }
@@ -167,18 +166,17 @@ static bool vm_handle_wp(struct page* page UNUSED)
 }
 
 /* Return true on success */
-bool vm_try_handle_fault(struct intr_frame* f, void* addr, bool user, bool write,
-                         bool not_present)
+bool vm_try_handle_fault(struct intr_frame* f, void* addr, bool user, bool write, bool not_present)
 {
     struct supplemental_page_table* spt = &thread_current()->spt;
     struct page* page = NULL;
-    
+
     if (!not_present)
         return false;
     page = spt_find_page(spt, addr);
     if (page == NULL)
         return false;
-    
+
     return vm_do_claim_page(page);
 }
 
@@ -230,7 +228,8 @@ static bool hash_less(const struct hash_elem* a, const struct hash_elem* b, void
 {
     struct page* page_a = hash_entry(a, struct page, elem);
     struct page* page_b = hash_entry(b, struct page, elem);
-    return page_a->va < page_b->va; // find_elem에서 인자 순서만 바꿔서 두번 호출, 크지도 않고, 작지도 않으면 같다라는 성질 이용
+    return page_a->va <
+           page_b->va; // find_elem에서 인자 순서만 바꿔서 두번 호출, 크지도 않고, 작지도 않으면 같다라는 성질 이용
 }
 
 /* Initialize new supplemental page table */
@@ -240,8 +239,7 @@ void supplemental_page_table_init(struct supplemental_page_table* spt)
 }
 
 /* Copy supplemental page table from src to dst */
-bool supplemental_page_table_copy(struct supplemental_page_table* dst,
-                                  struct supplemental_page_table* src)
+bool supplemental_page_table_copy(struct supplemental_page_table* dst, struct supplemental_page_table* src)
 {
     struct hash_iterator i;
     hash_first(&i, &src->pages);
@@ -254,12 +252,13 @@ bool supplemental_page_table_copy(struct supplemental_page_table* dst,
         if (type == VM_UNINIT) {
             vm_initializer* init = src_page->uninit.init;
             void* aux = src_page->uninit.aux;
-            
+
             if (aux != NULL) {
                 struct lazy_load_aux* src_aux = (struct lazy_load_aux*)aux;
                 struct lazy_load_aux* dst_aux = malloc(sizeof(struct lazy_load_aux));
-                if (dst_aux == NULL) return false;
-                
+                if (dst_aux == NULL)
+                    return false;
+
                 memcpy(dst_aux, src_aux, sizeof(struct lazy_load_aux));
                 if (src_aux->file) {
                     dst_aux->file = file_duplicate(src_aux->file);
@@ -272,10 +271,10 @@ bool supplemental_page_table_copy(struct supplemental_page_table* dst,
         } else {
             if (!vm_alloc_page(type, upage, writable))
                 return false;
-            
+
             if (!vm_claim_page(upage))
                 return false;
-            
+
             struct page* dst_page = spt_find_page(dst, upage);
             if (dst_page && src_page->frame) {
                 memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
@@ -293,7 +292,8 @@ void supplemental_page_table_kill(struct supplemental_page_table* spt)
     hash_destroy(&spt->pages, page_destroy_func);
 }
 
-static void page_destroy_func(struct hash_elem *e, void *aux UNUSED) {
-    struct page *page = hash_entry(e, struct page, elem);
+static void page_destroy_func(struct hash_elem* e, void* aux UNUSED)
+{
+    struct page* page = hash_entry(e, struct page, elem);
     vm_dealloc_page(page);
 }

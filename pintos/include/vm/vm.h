@@ -47,8 +47,8 @@ struct page {
     struct frame* frame; /* Back reference for frame */
 
     /* Your implementation */
-	struct hash_elem elem; // spt의 pages에 들어갈 해시 요소
-	bool writable; // pml4_set_page 할 때 필요
+    struct hash_elem elem; // spt의 pages에 들어갈 해시 요소
+    bool writable;         // pml4_set_page 할 때 필요
     /* Per-type data are binded into the union.
      * Each function automatically detects the current union */
     union {
@@ -88,7 +88,7 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
-	struct hash pages;
+    struct hash pages;
 };
 
 // lazy loading을 할때 필요한 정보(load_segment의 parameter중 일부 저장)
