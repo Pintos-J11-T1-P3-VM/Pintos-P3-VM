@@ -10,6 +10,7 @@
 #include "threads/vaddr.h"
 #include "vm/inspect.h"
 #include "vm/uninit.h"
+#include "filesys/file.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -25,7 +26,7 @@ void vm_init(void)
     register_inspect_intr();
     /* DO NOT MODIFY UPPER LINES. */
     /* TODO: Your code goes here. */
-	
+	supplemental_page_table_init(&thread_current()->spt);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -46,6 +47,7 @@ enum vm_type page_get_type(struct page* page)
 static struct frame* vm_get_victim(void);
 static bool vm_do_claim_page(struct page* page);
 static struct frame* vm_evict_frame(void);
+static void page_destroy_func(struct hash_elem *e, void *aux UNUSED);
 
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
@@ -238,14 +240,60 @@ void supplemental_page_table_init(struct supplemental_page_table* spt)
 }
 
 /* Copy supplemental page table from src to dst */
-bool supplemental_page_table_copy(struct supplemental_page_table* dst UNUSED,
-                                  struct supplemental_page_table* src UNUSED)
+bool supplemental_page_table_copy(struct supplemental_page_table* dst,
+                                  struct supplemental_page_table* src)
 {
+    struct hash_iterator i;
+    hash_first(&i, &src->pages);
+    while (hash_next(&i)) {
+        struct page* src_page = hash_entry(hash_cur(&i), struct page, elem);
+        enum vm_type type = src_page->operations->type;
+        void* upage = src_page->va;
+        bool writable = src_page->writable;
+
+        if (type == VM_UNINIT) {
+            vm_initializer* init = src_page->uninit.init;
+            void* aux = src_page->uninit.aux;
+            
+            if (aux != NULL) {
+                struct lazy_load_aux* src_aux = (struct lazy_load_aux*)aux;
+                struct lazy_load_aux* dst_aux = malloc(sizeof(struct lazy_load_aux));
+                if (dst_aux == NULL) return false;
+                
+                memcpy(dst_aux, src_aux, sizeof(struct lazy_load_aux));
+                if (src_aux->file) {
+                    dst_aux->file = file_duplicate(src_aux->file);
+                }
+                aux = dst_aux;
+            }
+
+            if (!vm_alloc_page_with_initializer(src_page->uninit.type, upage, writable, init, aux))
+                return false;
+        } else {
+            if (!vm_alloc_page(type, upage, writable))
+                return false;
+            
+            if (!vm_claim_page(upage))
+                return false;
+            
+            struct page* dst_page = spt_find_page(dst, upage);
+            if (dst_page && src_page->frame) {
+                memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+            }
+        }
+    }
+    return true;
 }
 
 /* Free the resource hold by the supplemental page table */
-void supplemental_page_table_kill(struct supplemental_page_table* spt UNUSED)
+void supplemental_page_table_kill(struct supplemental_page_table* spt)
 {
     /* TODO: Destroy all the supplemental_page_table hold by thread and
      * TODO: writeback all the modified contents to the storage. */
+    hash_destroy(&spt->pages, page_destroy_func);
+}
+
+static void page_destroy_func(struct hash_elem *e, void *aux UNUSED) {
+    struct page *page = hash_entry(e, struct page, elem);
+    vm_dealloc_page(page);
 }

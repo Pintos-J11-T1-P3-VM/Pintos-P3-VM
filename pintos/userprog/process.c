@@ -267,10 +267,12 @@ int process_exec(void* f_name)
     /* We first kill the current context */
     process_cleanup();
 
+#ifdef VM
+    supplemental_page_table_init(&thread_current()->spt);
+#endif
+
     /* And then load the binary */
-    lock_acquire(&filesys_lock);
     success = load(file_name, &_if);
-    lock_release(&filesys_lock);
 
     /* If load failed, quit. */
     palloc_free_page(file_name);

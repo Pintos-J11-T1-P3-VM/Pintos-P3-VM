@@ -13,6 +13,8 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/init.h"
+#include "threads/malloc.h"
+#include "userprog/process.h"
 
 // true, flase define
 #define TRUE 1
@@ -124,10 +126,17 @@ struct file* fd_to_file_for_find(struct thread* curr, int fd)
 
 static void user_memory_access(const void* addr)
 {
-    if (addr == NULL || addr >= KERN_BASE || pml4_get_page(thread_current()->pml4, addr) == NULL) {
+    if (addr == NULL || is_kernel_vaddr(addr)) {
         thread_current()->exit_num = -1;
         thread_exit();
     }
+#ifdef VM
+    /* For project 3 and later. */
+    if (spt_find_page(&thread_current()->spt, addr) == NULL) {
+        thread_current()->exit_num = -1;
+        thread_exit();
+    }
+#endif
 }
 
 static bool create(const char* file, unsigned initial_size)
