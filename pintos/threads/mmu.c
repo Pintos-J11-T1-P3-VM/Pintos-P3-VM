@@ -164,7 +164,7 @@ static void pgdir_destroy(uint64_t* pdp)
     for (unsigned i = 0; i < PGSIZE / sizeof(uint64_t*); i++) {
         uint64_t* pte = ptov((uint64_t*)pdp[i]);
         if (((uint64_t)pte) & PTE_P)
-            pt_destroy(PTE_ADDR(pte));
+            pt_destroy((void*)PTE_ADDR(pte));
     }
     palloc_free_page((void*)pdp);
 }

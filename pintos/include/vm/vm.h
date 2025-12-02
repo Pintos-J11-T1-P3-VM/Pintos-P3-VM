@@ -2,6 +2,7 @@
 #define VM_VM_H
 #include <stdbool.h>
 #include "threads/palloc.h"
+#include <hash.h>
 
 enum vm_type {
     /* page not initialized */
@@ -46,7 +47,8 @@ struct page {
     struct frame* frame; /* Back reference for frame */
 
     /* Your implementation */
-
+	struct hash_elem elem; // spt의 pages에 들어갈 해시 요소
+	bool writable; // pml4_set_page 할 때 필요
     /* Per-type data are binded into the union.
      * Each function automatically detects the current union */
     union {
@@ -85,7 +87,17 @@ struct page_operations {
 /* Representation of current process's memory space.
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
-struct supplemental_page_table {};
+struct supplemental_page_table {
+	struct hash pages;
+};
+
+// lazy loading을 할때 필요한 정보(load_segment의 parameter중 일부 저장)
+struct lazy_load_aux {
+    struct file* file;
+    off_t ofs;
+    size_t read_bytes;
+    size_t zero_bytes;
+};
 
 #include "threads/thread.h"
 void supplemental_page_table_init(struct supplemental_page_table* spt);
