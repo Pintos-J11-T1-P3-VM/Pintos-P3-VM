@@ -26,7 +26,7 @@ void vm_init(void)
     register_inspect_intr();
     /* DO NOT MODIFY UPPER LINES. */
     /* TODO: Your code goes here. */
-    supplemental_page_table_init(&thread_current()->spt);
+    supplemental_page_table_init(&thread_current()->spt); // initd 프로세스의 spt 초기화
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -228,8 +228,8 @@ static bool hash_less(const struct hash_elem* a, const struct hash_elem* b, void
 {
     struct page* page_a = hash_entry(a, struct page, elem);
     struct page* page_b = hash_entry(b, struct page, elem);
-    return page_a->va <
-           page_b->va; // find_elem에서 인자 순서만 바꿔서 두번 호출, 크지도 않고, 작지도 않으면 같다라는 성질 이용
+    return page_a->va < page_b->va;
+    // find_elem에서 인자 순서만 바꿔서 두번 호출, 크지도 않고, 작지도 않으면 같다라는 성질 이용
 }
 
 /* Initialize new supplemental page table */
@@ -241,47 +241,47 @@ void supplemental_page_table_init(struct supplemental_page_table* spt)
 /* Copy supplemental page table from src to dst */
 bool supplemental_page_table_copy(struct supplemental_page_table* dst, struct supplemental_page_table* src)
 {
-    struct hash_iterator i;
-    hash_first(&i, &src->pages);
-    while (hash_next(&i)) {
-        struct page* src_page = hash_entry(hash_cur(&i), struct page, elem);
-        enum vm_type type = src_page->operations->type;
-        void* upage = src_page->va;
-        bool writable = src_page->writable;
+    struct hash_iterator i;                                                  // 해시 순회용 이터레이터
+    hash_first(&i, &src->pages);                                             // 부모 SPT 해시 순회 시작
+    while (hash_next(&i)) {                                                  // 해시 테이블에 다음 엔트리가 있으면 반복
+        struct page* src_page = hash_entry(hash_cur(&i), struct page, elem); // 현재 엔트리를 page로 복원
+        enum vm_type type = src_page->operations->type; // 페이지 타입(VM_UNINIT, VM_ANON, VM_FILE 등)
+        void* upage = src_page->va;                     // 사용자 가상주소
+        bool writable = src_page->writable;             // 쓰기 가능 여부
 
-        if (type == VM_UNINIT) {
-            vm_initializer* init = src_page->uninit.init;
-            void* aux = src_page->uninit.aux;
+        if (type == VM_UNINIT) {                          // 아직 로드 안 된 lazy 페이지라면
+            vm_initializer* init = src_page->uninit.init; // lazy 로딩 함수 포인터
+            void* aux = src_page->uninit.aux;             // 로딩에 필요한 추가 정보 포인터
 
-            if (aux != NULL) {
-                struct lazy_load_aux* src_aux = (struct lazy_load_aux*)aux;
-                struct lazy_load_aux* dst_aux = malloc(sizeof(struct lazy_load_aux));
-                if (dst_aux == NULL)
+            if (aux != NULL) { // aux 구조체는 새로 할당해 복사(공유 시 uninit_destroy에서 double free·상태 충돌)
+                struct lazy_load_aux* src_aux = (struct lazy_load_aux*)aux;           // 부모 aux
+                struct lazy_load_aux* dst_aux = malloc(sizeof(struct lazy_load_aux)); // 자식용 aux 할당
+                if (dst_aux == NULL)                                                  // 메모리 부족 시 실패
                     return false;
 
-                memcpy(dst_aux, src_aux, sizeof(struct lazy_load_aux));
-                if (src_aux->file) {
-                    dst_aux->file = file_duplicate(src_aux->file);
+                memcpy(dst_aux, src_aux, sizeof(struct lazy_load_aux));            // 구조체 내용 복사
+                if (src_aux->file) {                                               // 파일 포인터가 있다면
+                    dst_aux->file = file_duplicate(src_aux->file);            // 같은 inode를 가리키는 새 핸들(파일 오프셋은 분리됨)
                 }
-                aux = dst_aux;
+                aux = dst_aux; // 자식용 aux를 사용하도록 교체
             }
 
-            if (!vm_alloc_page_with_initializer(src_page->uninit.type, upage, writable, init, aux))
+            if (!vm_alloc_page_with_initializer(src_page->uninit.type, upage, writable, init, aux)) // lazy 엔트리 등록
                 return false;
-        } else {
-            if (!vm_alloc_page(type, upage, writable))
-                return false;
-
-            if (!vm_claim_page(upage))
+        } else {                                       // lazy가 아닌 페이지(익명/파일/스왑 등)
+            if (!vm_alloc_page(type, upage, writable)) // 자식 SPT에 엔트리 생성
                 return false;
 
-            struct page* dst_page = spt_find_page(dst, upage);
-            if (dst_page && src_page->frame) {
-                memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+            if (!vm_claim_page(upage)) // 프레임 즉시 할당/매핑
+                return false;
+
+            struct page* dst_page = spt_find_page(dst, upage);              // 방금 만든 자식 페이지 찾기
+            if (dst_page && src_page->frame) {                              // 부모·자식 모두 프레임이 있으면
+                memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE); // 내용 한 페이지 복사
             }
         }
     }
-    return true;
+    return true; // 전부 성공적으로 복사
 }
 
 /* Free the resource hold by the supplemental page table */
