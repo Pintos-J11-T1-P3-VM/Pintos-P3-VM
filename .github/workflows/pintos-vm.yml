@@ -1,13 +1,11 @@
 name: Pintos VM CI
 on:
   pull_request:
-    branches: [develop] # PR 대상 브랜치가 develop이 맞는지 꼭 확인하세요! (main이나 master일 수도 있음)
-
+    branches: [develop]
 permissions:
   contents: read
   pull-requests: write
   issues: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,58 +14,35 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Install dependencies
         run: |
           sudo apt-get update
-          # gcc-multilib와 g++-multilib는 32비트 핀토스 컴파일에 필수입니다.
-          sudo apt-get install -y build-essential qemu-system-x86 gcc-multilib g++-multilib
-
-      - name: Check directory structure (Debugging)
-        run: |
-          echo "Current directory structure:"
-          ls -R
-          # 로그에서 실제 폴더 구조를 보고 cd 경로가 맞는지 확인용입니다.
-
+          sudo apt-get install -y build-essential qemu-system-x86
       - name: Build VM
         run: |
-          # [주의] 본인 리포지토리 구조에 맞춰 아래 경로를 수정해야 할 수 있습니다. (예: cd src/vm)
           cd pintos/vm
-          
-          # pintos/utils 경로도 본인 구조에 맞춰야 합니다.
-          export PATH="$GITHUB_WORKSPACE/pintos/utils:$PATH"
-          
-          # 최신 컴파일러 에러 무시를 위해 CFLAGS 추가 (필요시 사용)
-          # export CFLAGS="-Wno-error" 
-          
+          export PATH=“$GITHUB_WORKSPACE/pintos/utils:$PATH”
           make clean || true
           make
-
       - name: Run VM tests
         id: run_tests
         run: |
           cd pintos/vm
-          export PATH="$GITHUB_WORKSPACE/pintos/utils:$PATH"
-          
-          # 테스트 실행 (실패해도 다음 스텝으로 넘어가도록 || true)
+          export PATH=“$GITHUB_WORKSPACE/pintos/utils:$PATH”
+          # run tests and save summary
           make check || true
-          
-          results_file="build/results"
-          
-          if [[ -f "$results_file" ]]; then
-            passed=$(grep -c '^pass ' "$results_file" || true)
-            failed=$(grep -c '^FAIL ' "$results_file" || true)
+          results_file=“build/results”
+          if [[ -f “$results_file” ]]; then
+            passed=$(grep -c '^pass ' “$results_file” || true)
+            failed=$(grep -c '^FAIL ' “$results_file” || true)
             total=$((passed + failed))
           else
-            echo "Results file not found!"
             passed=0
             total=0
           fi
-          
-          echo "passed=$passed" >> $GITHUB_OUTPUT
-          echo "total=$total" >> $GITHUB_OUTPUT
+          echo “passed=$passed” >> $GITHUB_OUTPUT
+          echo “total=$total” >> $GITHUB_OUTPUT
         continue-on-error: true
-
       - name: Comment test results
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
@@ -76,14 +51,7 @@ jobs:
           script: |
             const passed = '${{ steps.run_tests.outputs.passed }}';
             const total = '${{ steps.run_tests.outputs.total }}';
-            
-            let body = `VM tests: ${passed}/${total} passed.`;
-            if (total == 0) {
-               body += "\n⚠️ **Warning:** Test results file was not found or tests didn't run. Check the 'Build VM' or 'Run VM tests' logs.";
-            } else {
-               body += " (See workflow logs for details).";
-            }
-            
+            const body = `VM tests: ${passed}/${total} passed (see workflow logs for details).`;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
