@@ -20,28 +20,29 @@ jobs:
           sudo apt-get install -y build-essential qemu-system-x86
       - name: Build VM
         run: |
+          chmod +x pintos/utils/*
           cd pintos/vm
-          export PATH=“$GITHUB_WORKSPACE/pintos/utils:$PATH”
+          export PATH="$GITHUB_WORKSPACE/pintos/utils:$PATH"
           make clean || true
           make
       - name: Run VM tests
         id: run_tests
         run: |
-          cd pintos/vm
-          export PATH=“$GITHUB_WORKSPACE/pintos/utils:$PATH”
+          export PATH="$GITHUB_WORKSPACE/pintos/utils:$PATH"
+          cd pintos/vm/build
           # run tests and save summary
           make check || true
-          results_file=“build/results”
-          if [[ -f “$results_file” ]]; then
-            passed=$(grep -c '^pass ' “$results_file” || true)
-            failed=$(grep -c '^FAIL ' “$results_file” || true)
+          results_file="results"
+          if [[ -f "$results_file" ]]; then
+            passed=$(grep -c '^pass ' "$results_file" || true)
+            failed=$(grep -c '^FAIL ' "$results_file" || true)
             total=$((passed + failed))
           else
             passed=0
             total=0
           fi
-          echo “passed=$passed” >> $GITHUB_OUTPUT
-          echo “total=$total” >> $GITHUB_OUTPUT
+          echo "passed=$passed" >> $GITHUB_OUTPUT
+          echo "total=$total" >> $GITHUB_OUTPUT
         continue-on-error: true
       - name: Comment test results
         if: github.event_name == 'pull_request'
