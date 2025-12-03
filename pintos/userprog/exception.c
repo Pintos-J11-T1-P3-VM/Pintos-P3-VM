@@ -142,7 +142,7 @@ static void page_fault(struct intr_frame* f)
     /* Count page faults. */
     page_fault_cnt++;
     // bad_pointer 핸들러
-    if (!user && is_user_vaddr(fault_addr)) {
+    if (user || is_user_vaddr(fault_addr)) {
         thread_current()->exit_num = -1;
         thread_exit();
     }

@@ -7,6 +7,7 @@
 #include "threads/vaddr.h"
 #include "string.h"
 #include "userprog/process.h"
+#define STACK_MAX_SIZE (1 << 20)
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -168,6 +169,13 @@ bool vm_try_handle_fault(struct intr_frame* f UNUSED, void* addr UNUSED, bool us
     if (is_kernel_vaddr(addr))
         return false;
     if (not_present) {
+        void* rsp = f->rsp;
+        if (!user)
+            rsp = thread_current()->rsp;
+        if ((USER_STACK - STACK_MAX_SIZE <= rsp - 8 && rsp - 8 == addr && addr <= USER_STACK) ||
+            (USER_STACK - STACK_MAX_SIZE <= rsp && rsp <= addr && addr <= USER_STACK))
+            vm_stack_growth(addr);
+
         page = spt_find_page(spt, addr);
         if (page == NULL)
             return false;

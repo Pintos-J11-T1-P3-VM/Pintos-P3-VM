@@ -318,10 +318,11 @@ void syscall_handler(struct intr_frame* f)
     // TODO: Your implementation goes here.
     int syscall_num = f->R.rax;
 
-    size_t size;
 #ifdef VM
+    // syscall은 반드시 유저모드에서 이때 intra_frame은 항상 유저스택정보를 가지고 있다.
     thread_current()->rsp = f->rsp;
 #endif
+    size_t size;
     switch (syscall_num) {
     case SYS_HALT:
         power_off();
