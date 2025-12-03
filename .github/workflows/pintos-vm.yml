@@ -17,20 +17,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential qemu-system-x86
 
-      - name: Setup Pintos
-        run: |
-          cd pintos
-          source activate
-
       - name: Build VM
         run: |
           cd pintos/vm
+          export PATH="$GITHUB_WORKSPACE/pintos/utils:$PATH"
           make clean || true
           make
 
       - name: Run VM tests
         run: |
           cd pintos/vm
+          export PATH="$GITHUB_WORKSPACE/pintos/utils:$PATH"
           make check
         continue-on-error: true
 
