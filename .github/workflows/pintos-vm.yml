@@ -1,47 +1,60 @@
 name: Pintos VM CI
-
 on:
   pull_request:
-    branches: [main, develop]
-
+    branches: [develop]
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
+        with:
+          fetch-depth: 0
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential qemu-system-x86
-
-      - name: Setup Pintos
-        run: |
-          cd pintos
-          source activate
-
       - name: Build VM
         run: |
           cd pintos/vm
+          export PATH="$GITHUB_WORKSPACE/pintos/utils:$PATH"
           make clean || true
           make
-
       - name: Run VM tests
+        id: run_tests
         run: |
           cd pintos/vm
-          make check
+          export PATH="$GITHUB_WORKSPACE/pintos/utils:$PATH"
+          # run tests and save summary
+          make check || true
+          results_file="build/results"
+          if [[ -f "$results_file" ]]; then
+            passed=$(grep -c '^pass ' "$results_file" || true)
+            failed=$(grep -c '^FAIL ' "$results_file" || true)
+            total=$((passed + failed))
+          else
+            passed=0
+            total=0
+          fi
+          echo “passed=$passed" >> $GITHUB_OUTPUT
+          echo "total=$total" >> $GITHUB_OUTPUT
         continue-on-error: true
-
-  lint:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Check code style (optional)
-        run: |
-          echo "Code style check placeholder"
-          # 필요시 clang-format 등 추가
+      - name: Comment test results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const passed = '${{ steps.run_tests.outputs.passed }}';
+            const total = '${{ steps.run_tests.outputs.total }}';
+            const body = 'VM tests: ${passed}/${total} passed (see workflow logs for details).';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
