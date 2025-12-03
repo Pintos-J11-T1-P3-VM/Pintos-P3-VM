@@ -62,7 +62,6 @@ tid_t process_create_initd(const char* file_name)
     if (fn_copy == NULL)
         return TID_ERROR;
     strlcpy(fn_copy, file_name, PGSIZE);
-    // 모두가 행복한 세상
     int i = 0;
     while (file_name[i] != ' ' && file_name[i] != '\0') {
         copy_name[i] = file_name[i];
@@ -112,9 +111,7 @@ tid_t process_fork(const char* name, struct intr_frame* if_)
             break;
         }
     }
-    // error에서 exit_num -1 로 해줬으면 fork실패. 고로 sema_up해주고 list_remove
-    // sema_up안해주니까 자식 계속 살아있음;;;;
-    // 자식 살아있어서 4kb 공간 계속 잡고 있으니까 134개만들고 또 만드니까 132개 밖에 못만든다고 죽음
+    
     if (child->exit_num == -1) {
         sema_up(&child->waiting_parents);
         list_remove(&child->child_elem);
@@ -457,7 +454,6 @@ static bool load(const char* file_name, struct intr_frame* if_)
     off_t file_ofs;
     bool success = false;
     int i;
-    // 신규 처리 파일명 이상해서 안들어간다능
     char* save;
     char file_name_cp[128];
     strlcpy(file_name_cp, file_name, 128);
@@ -823,11 +819,8 @@ static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t 
         aux->read_bytes = page_read_bytes;
         aux->zero_bytes = page_zero_bytes;
 
-        if (!vm_alloc_page_with_initializer(VM_FILE, upage, writable, lazy_load_segment, aux)) {
-            file_close(dup_file);
-            free(aux);
+        if (!vm_alloc_page_with_initializer(VM_FILE, upage, writable, lazy_load_segment, aux))
             return false;
-        }
         /* Advance. */
         read_bytes -= page_read_bytes;
         zero_bytes -= page_zero_bytes;

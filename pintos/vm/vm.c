@@ -36,9 +36,9 @@ enum vm_type page_get_type(struct page* page)
 {
     int ty = VM_TYPE(page->operations->type);
     switch (ty) {
-    case VM_UNINIT:
+    case VM_UNINIT: // 초기화 전 페이지는 uninit.type 반환
         return VM_TYPE(page->uninit.type);
-    default:
+    default: // 그 외에는 페이지의 실제 타입 반환
         return ty;
     }
 }
@@ -48,6 +48,8 @@ static struct frame* vm_get_victim(void);
 static bool vm_do_claim_page(struct page* page);
 static struct frame* vm_evict_frame(void);
 static void page_destroy_func(struct hash_elem* e, void* aux UNUSED);
+void vm_release_frame(struct page* page);
+static void free_lazy_aux(struct lazy_load_aux* aux);
 
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
@@ -59,33 +61,39 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void* upage, bool writabl
     struct supplemental_page_table* spt = &thread_current()->spt;
 
     /* Check wheter the upage is already occupied or not. */
-    if (spt_find_page(spt, upage) == NULL) {
-        /* TODO: Create the page, fetch the initialier according to the VM type,
-         * TODO: and then create "uninit" page struct by calling uninit_new. You
-         * TODO: should modify the field after calling the uninit_new. */
-        struct page* page = malloc(sizeof(struct page));
-        if (page == NULL)
-            goto err;
-        switch (VM_TYPE(type)) {
-        case VM_ANON:
-            uninit_new(page, upage, init, type, aux, anon_initializer);
-            break;
-        case VM_FILE:
-            uninit_new(page, upage, init, type, aux, file_backed_initializer);
-            break;
-        default:
-            free(page);
-            free(aux);
-            goto err;
-        }
-        page->va = upage;
-        page->writable = writable;
-        if (!spt_insert_page(spt, page))
-            goto err;
-        return true;
+    if (spt_find_page(spt, upage) != NULL) {
+        free_lazy_aux(aux);
+        return false;
     }
-err:
-    return false;
+
+    /* TODO: Create the page, fetch the initialier according to the VM type,
+     * TODO: and then create "uninit" page struct by calling uninit_new. You
+     * TODO: should modify the field after calling the uninit_new. */
+    struct page* page = malloc(sizeof(struct page));
+    if (page == NULL) {
+        free_lazy_aux(aux);
+        return false;
+    }
+    switch (VM_TYPE(type)) {
+    case VM_ANON:
+        uninit_new(page, upage, init, type, aux, anon_initializer);
+        break;
+    case VM_FILE:
+        uninit_new(page, upage, init, type, aux, file_backed_initializer);
+        break;
+    default:
+        free_lazy_aux(aux);
+        free(page);
+        return false;
+    }
+    page->va = upage;
+    page->writable = writable;
+    if (!spt_insert_page(spt, page)) {
+        free_lazy_aux(aux);
+        free(page);
+        return false;
+    }
+    return true;
 }
 
 /* Find VA from spt and return page. On error, return NULL. */
@@ -112,6 +120,8 @@ bool spt_insert_page(struct supplemental_page_table* spt, struct page* page)
 
 void spt_remove_page(struct supplemental_page_table* spt, struct page* page)
 {
+    pml4_clear_page(thread_current()->pml4, page->va);
+    hash_delete(&spt->pages, &page->elem); // user after free 방지(struct page pointer)
     vm_dealloc_page(page);
 }
 
@@ -210,12 +220,15 @@ static bool vm_do_claim_page(struct page* page)
 
     /* TODO: Insert page table entry to map page's VA to frame's PA. */
     if (!pml4_set_page(thread_current()->pml4, page->va, frame->kva, page->writable)) {
-        palloc_free_page(frame->kva);
-        free(frame);
-        page->frame = NULL;
+        vm_release_frame(page);
         return false;
     }
-    return swap_in(page, frame->kva);
+    if (!swap_in(page, frame->kva)) {
+        pml4_clear_page(thread_current()->pml4, page->va);
+        vm_release_frame(page);
+        return false;
+    }
+    return true;
 }
 
 static uint64_t hash_hash(const struct hash_elem* e, void* aux)
@@ -225,11 +238,10 @@ static uint64_t hash_hash(const struct hash_elem* e, void* aux)
 }
 
 static bool hash_less(const struct hash_elem* a, const struct hash_elem* b, void* aux)
-{
+{    // find_elem에서 인자 순서만 바꿔서 두번 호출, 크지도 않고, 작지도 않으면 같다라는 성질 이용
     struct page* page_a = hash_entry(a, struct page, elem);
     struct page* page_b = hash_entry(b, struct page, elem);
     return page_a->va < page_b->va;
-    // find_elem에서 인자 순서만 바꿔서 두번 호출, 크지도 않고, 작지도 않으면 같다라는 성질 이용
 }
 
 /* Initialize new supplemental page table */
@@ -261,7 +273,11 @@ bool supplemental_page_table_copy(struct supplemental_page_table* dst, struct su
 
                 memcpy(dst_aux, src_aux, sizeof(struct lazy_load_aux));            // 구조체 내용 복사
                 if (src_aux->file) {                                               // 파일 포인터가 있다면
-                    dst_aux->file = file_duplicate(src_aux->file);            // 같은 inode를 가리키는 새 핸들(파일 오프셋은 분리됨)
+                    dst_aux->file = file_duplicate(src_aux->file);                 // 같은 inode를 가리키는 새 핸들(파일 오프셋은 분리됨)
+                    if (dst_aux->file == NULL) {
+                        free(dst_aux);
+                        return false;
+                    }
                 }
                 aux = dst_aux; // 자식용 aux를 사용하도록 교체
             }
@@ -272,8 +288,12 @@ bool supplemental_page_table_copy(struct supplemental_page_table* dst, struct su
             if (!vm_alloc_page(type, upage, writable)) // 자식 SPT에 엔트리 생성
                 return false;
 
-            if (!vm_claim_page(upage)) // 프레임 즉시 할당/매핑
+            if (!vm_claim_page(upage)) { // 프레임 즉시 할당/매핑
+                struct page* dst_page = spt_find_page(dst, upage);
+                if (dst_page)
+                    spt_remove_page(dst, dst_page);
                 return false;
+            }
 
             struct page* dst_page = spt_find_page(dst, upage);              // 방금 만든 자식 페이지 찾기
             if (dst_page && src_page->frame) {                              // 부모·자식 모두 프레임이 있으면
@@ -295,5 +315,26 @@ void supplemental_page_table_kill(struct supplemental_page_table* spt)
 static void page_destroy_func(struct hash_elem* e, void* aux UNUSED)
 {
     struct page* page = hash_entry(e, struct page, elem);
+    pml4_clear_page(thread_current()->pml4, page->va);
     vm_dealloc_page(page);
+}
+
+// kva, frame 메모리 해제
+void vm_release_frame(struct page* page)
+{
+    if (page && page->frame) {
+        palloc_free_page(page->frame->kva);
+        free(page->frame);
+        page->frame = NULL;
+    }
+}
+
+/* Free helper for lazy_load_aux when vm_alloc_page_with_initializer fails. */
+static void free_lazy_aux(struct lazy_load_aux* aux)
+{
+    if (aux == NULL)
+        return;
+    if (aux->file)
+        file_close(aux->file);
+    free(aux);
 }

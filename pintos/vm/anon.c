@@ -1,7 +1,10 @@
 /* anon.c: Implementation of page for non-disk image (a.k.a. anonymous page). */
 
+#include "threads/mmu.h"
+#include "threads/palloc.h"
 #include "vm/vm.h"
 #include "devices/disk.h"
+#include "threads/malloc.h"
 
 /* DO NOT MODIFY BELOW LINE */
 static struct disk* swap_disk;
@@ -49,4 +52,5 @@ static bool anon_swap_out(struct page* page)
 static void anon_destroy(struct page* page)
 {
     struct anon_page* anon_page = &page->anon;
+    vm_release_frame(page);
 }

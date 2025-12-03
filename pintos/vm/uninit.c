@@ -62,8 +62,11 @@ static void uninit_destroy(struct page* page)
     struct uninit_page* uninit UNUSED = &page->uninit;
     /* TODO: Fill this function.
      * TODO: If you don't have anything to do, just return. */
-    if (uninit->aux) {
-        free(uninit->aux);
+    if (uninit->aux) { // load 실패로 uninit 상태로 남은 페이지가 free되지 않았을 경우
+        struct lazy_load_aux* aux = uninit->aux;
+        if (aux->file)
+            file_close(aux->file);
+        free(aux);
         uninit->aux = NULL; // 방어적 코딩: 이중 free 방지
     }
 }
