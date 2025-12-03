@@ -33,8 +33,8 @@ jobs:
           make check || true
           results_file=“build/results”
           if [[ -f “$results_file” ]]; then
-            passed=$(grep -c ‘^pass ’ “$results_file” || true)
-            failed=$(grep -c ‘^FAIL ’ “$results_file” || true)
+            passed=$(grep -c '^pass ' “$results_file” || true)
+            failed=$(grep -c '^FAIL ' “$results_file” || true)
             total=$((passed + failed))
           else
             passed=0
@@ -44,13 +44,13 @@ jobs:
           echo “total=$total” >> $GITHUB_OUTPUT
         continue-on-error: true
       - name: Comment test results
-        if: github.event_name == ‘pull_request’
+        if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const passed = ‘${{ steps.run_tests.outputs.passed }}‘;
-            const total = ‘${{ steps.run_tests.outputs.total }}’;
+            const passed = '${{ steps.run_tests.outputs.passed }}';
+            const total = '${{ steps.run_tests.outputs.total }}';
             const body = `VM tests: ${passed}/${total} passed (see workflow logs for details).`;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
