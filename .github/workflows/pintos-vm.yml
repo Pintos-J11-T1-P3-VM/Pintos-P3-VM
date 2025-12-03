@@ -2,7 +2,7 @@ name: Pintos VM CI
 
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [develop]
 
 jobs:
   build:
@@ -55,12 +55,3 @@ jobs:
               issue_number: context.issue.number,
               body
             });
-
-  lint:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # Lint job intentionally left empty (placeholder removed)
