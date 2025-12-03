@@ -4,6 +4,9 @@
 #include "vm/vm.h"
 #include "vm/inspect.h"
 #include "hash.h"
+#include "threads/vaddr.h"
+#include "string.h"
+#include "userprog/process.h"
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -78,11 +81,9 @@ struct page* spt_find_page(struct supplemental_page_table* spt UNUSED, void* va 
     struct page* page = NULL;
     /* TODO: Fill this function. */
     struct hash_elem* hash_e;
-
-    page = (struct page*)malloc(sizeof(struct page));
-    page->va = pg_round_down(va);
-    hash_e = hash_find(&spt->hash_table, &page->hash_elem);
-    free(page);
+    struct page tmp_page;
+    tmp_page.va = pg_round_down(va);
+    hash_e = hash_find(&spt->hash_table, &tmp_page.hash_elem);
     if (hash_e == NULL)
         return NULL;
     else
@@ -146,6 +147,7 @@ static struct frame* vm_get_frame(void)
 /* Growing the stack. */
 static void vm_stack_growth(void* addr UNUSED)
 {
+    vm_alloc_page(VM_ANON | VM_MARKER_0, pg_round_down(addr), 1);
 }
 
 /* Handle the fault on write_protected page */
@@ -161,8 +163,19 @@ bool vm_try_handle_fault(struct intr_frame* f UNUSED, void* addr UNUSED, bool us
     struct page* page = NULL;
     /* TODO: Validate the fault */
     /* TODO: Your code goes here */
-
-    return vm_do_claim_page(page);
+    if (addr == NULL)
+        return false;
+    if (is_kernel_vaddr(addr))
+        return false;
+    if (not_present) {
+        page = spt_find_page(spt, addr);
+        if (page == NULL)
+            return false;
+        if (write == 1 && page->writable == 0)
+            return false;
+        return vm_do_claim_page(page);
+    }
+    return false;
 }
 
 /* Free the page.
@@ -223,6 +236,36 @@ void supplemental_page_table_init(struct supplemental_page_table* spt UNUSED)
 bool supplemental_page_table_copy(struct supplemental_page_table* dst UNUSED,
                                   struct supplemental_page_table* src UNUSED)
 {
+    struct hash_iterator i;
+    struct page* src_page;
+
+    hash_first(&i, &src->hash_table);
+    while (hash_next(&i)) {
+        src_page = hash_entry(hash_cur(&i), struct page, hash_elem);
+        enum vm_type src_type = VM_TYPE(src_page->operations->type);
+        void* upage = src_page->va;
+        bool writable = src_page->writable;
+        if (src_type == VM_UNINIT) {
+            struct uninit_page* src_uninit = &src_page->uninit;
+            if (src_uninit->aux != NULL) {
+                struct lazy_load_aux* copy_aux = malloc(sizeof(struct lazy_load_aux));
+                memcpy(copy_aux, src_uninit->aux, sizeof(struct lazy_load_aux));
+                if (!vm_alloc_page_with_initializer(src_uninit->type, upage, writable, src_uninit->init, copy_aux))
+                    return false;
+            } else {
+                if (!vm_alloc_page(src_uninit->type, upage, writable))
+                    return false;
+            }
+            continue;
+        }
+        if (!vm_alloc_page(src_type, upage, writable))
+            return false;
+        if (!vm_claim_page(upage))
+            return false;
+        struct page* dst_page = spt_find_page(dst, upage);
+        memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+    }
+    return true;
 }
 
 /* Free the resource hold by the supplemental page table */
@@ -230,4 +273,12 @@ void supplemental_page_table_kill(struct supplemental_page_table* spt UNUSED)
 {
     /* TODO: Destroy all the supplemental_page_table hold by thread and
      * TODO: writeback all the modified contents to the storage. */
+    hash_clear(&spt->hash_table, hash_desroy_action);
+}
+
+void hash_desroy_action(struct hash_elem* hash_elem, void* aux)
+{
+    struct page* page = hash_entry(hash_elem, struct page, hash_elem);
+    destroy(page);
+    free(page);
 }

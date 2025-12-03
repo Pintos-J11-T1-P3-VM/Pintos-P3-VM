@@ -124,7 +124,7 @@ struct file* fd_to_file_for_find(struct thread* curr, int fd)
 
 static void user_memory_access(const void* addr)
 {
-    if (addr == NULL || addr >= KERN_BASE || pml4_get_page(thread_current()->pml4, addr) == NULL) {
+    if (addr == NULL || addr >= KERN_BASE) {
         thread_current()->exit_num = -1;
         thread_exit();
     }
@@ -319,6 +319,9 @@ void syscall_handler(struct intr_frame* f)
     int syscall_num = f->R.rax;
 
     size_t size;
+#ifdef VM
+    thread_current()->rsp = f->rsp;
+#endif
     switch (syscall_num) {
     case SYS_HALT:
         power_off();

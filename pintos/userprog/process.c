@@ -332,6 +332,7 @@ void process_exit(void)
     if (curr->parent != NULL)
         sema_down(&curr->waiting_parents);
     process_cleanup();
+    hash_destroy(&curr->spt.hash_table, NULL);
 }
 
 /* Free the current process's resources. */
@@ -737,12 +738,21 @@ static bool lazy_load_segment(struct page* page, void* aux)
     /* TODO: This called when the first page fault occurs on address VA. */
     /* TODO: VA is available when calling this function. */
     struct lazy_load_aux* arg = (struct lazy_load_aux*)aux;
-    file_seek(arg->file, arg->ofs);
-    if (file_read(arg->file, page->frame->kva, arg->page_read_bytes) != (int)arg->page_read_bytes) {
+    bool flag = false;
+    if (!lock_held_by_current_thread(&filesys_lock)) {
+        lock_acquire(&filesys_lock);
+        flag = true;
+    }
+    if (file_read_at(arg->file, page->frame->kva, arg->page_read_bytes, arg->ofs) != (int)arg->page_read_bytes) {
+        if (flag)
+            lock_release(&filesys_lock);
         palloc_free_page(page);
         return false;
     }
+    if (flag)
+        lock_release(&filesys_lock);
     memset(page->frame->kva + arg->page_read_bytes, 0, arg->page_zero_bytes);
+    free(aux);
     return true;
 }
 
@@ -775,7 +785,7 @@ static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t 
         size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
         /* TODO: Set up aux to pass information to the lazy_load_segment. */
-        struct lazy_load_aux* lazy_load_aux = malloc(sizeof(lazy_load_aux));
+        struct lazy_load_aux* lazy_load_aux = malloc(sizeof(struct lazy_load_aux));
         lazy_load_aux->file = file;
         lazy_load_aux->ofs = ofs;
         lazy_load_aux->page_read_bytes = page_read_bytes;
@@ -788,6 +798,7 @@ static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t 
         read_bytes -= page_read_bytes;
         zero_bytes -= page_zero_bytes;
         upage += PGSIZE;
+        ofs += page_read_bytes;
     }
     return true;
 }
