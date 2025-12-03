@@ -259,13 +259,19 @@ bool supplemental_page_table_copy(struct supplemental_page_table* dst UNUSED, //
                 dst_aux->zero_bytes = src_aux->zero_bytes;
                 dst_aux->file = file_reopen(src_aux->file); // close in destroy
             }
-            if (!vm_alloc_page_with_initializer(type, src_page->va, src_page->writable, src_page->uninit.init, dst_aux))
+            if (!vm_alloc_page_with_initializer(type, src_page->va, src_page->writable, src_page->uninit.init,
+                                                dst_aux)) {
+                file_close(dst_aux->file);
+                free(dst_aux);
                 return false;
+            }
         } else {
             struct page* dst_page;
             if (!vm_alloc_page(type, src_page->va, src_page->writable) || !vm_claim_page(src_page->va) ||
-                (dst_page = spt_find_page(dst, src_page->va)) == NULL) // do alloc, claim, find
-                return false;
+                (dst_page = spt_find_page(dst, src_page->va)) == NULL) { // do alloc, claim, find
+                file_close
+            }
+            return false;
             memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
         }
     }
