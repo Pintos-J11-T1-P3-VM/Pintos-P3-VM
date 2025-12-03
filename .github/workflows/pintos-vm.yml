@@ -37,10 +37,16 @@ jobs:
           cd pintos/vm
           export PATH="$GITHUB_WORKSPACE/pintos/utils:$PATH"
           # run tests and save summary
-          make check | tee /tmp/test.log
-          # naive parse: count "[ OK ]" as pass and "[ FAIL ]" as total markers
-          passed=$(grep -c "\[ OK \]" /tmp/test.log || true)
-          total=$(grep -E "\[ OK \]|\[ FAIL \]" /tmp/test.log | wc -l || true)
+          make check || true
+          results_file="build/results"
+          if [[ -f "$results_file" ]]; then
+            passed=$(grep -c '^pass ' "$results_file" || true)
+            failed=$(grep -c '^FAIL ' "$results_file" || true)
+            total=$((passed + failed))
+          else
+            passed=0
+            total=0
+          fi
           echo "passed=$passed" >> $GITHUB_OUTPUT
           echo "total=$total" >> $GITHUB_OUTPUT
         continue-on-error: true
