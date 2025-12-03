@@ -269,9 +269,8 @@ bool supplemental_page_table_copy(struct supplemental_page_table* dst UNUSED, //
             struct page* dst_page;
             if (!vm_alloc_page(type, src_page->va, src_page->writable) || !vm_claim_page(src_page->va) ||
                 (dst_page = spt_find_page(dst, src_page->va)) == NULL) { // do alloc, claim, find
-                file_close
+                return false;
             }
-            return false;
             memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
         }
     }
