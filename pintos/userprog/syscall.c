@@ -13,6 +13,9 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/init.h"
+#ifdef VM
+#include "vm/vm.h"
+#endif
 
 // true, flase define
 #define TRUE 1
@@ -129,10 +132,8 @@ static void user_memory_access(const void* addr)
         thread_exit();
     }
 #ifdef VM
-    if (spt_find_page(&thread_current()->spt, (void*)addr) == NULL) {
-        thread_current()->exit_num = -1;
-        thread_exit();
-    }
+    // 요구 페이징, 지연 로딩을 하려면 여기서 exit_num, thread_exit 하면 안되고, 최소한의 검사만 수행하고 나머지는 vm_try_handle_fault에서.
+    return;
 #else
     if (pml4_get_page(thread_current()->pml4, addr) == NULL) {
         thread_current()->exit_num = -1;
@@ -200,6 +201,16 @@ static int read(int fd, void* buffer, unsigned size)
 
     struct thread* curr = thread_current();
     struct file* file = fd_to_file_for_find(curr, fd);
+
+#ifdef VM
+    /* Writing into user buffer: if the page exists but is read-only (e.g., code),
+     * kill the process per spec. Allow missing page to fault for stack growth. */
+    struct page* p = spt_find_page(&curr->spt, buffer);
+    if (p != NULL && !p->writable) {
+        curr->exit_num = -1;
+        thread_exit();
+    }
+#endif
 
     if (file == NULL)
         return -1;

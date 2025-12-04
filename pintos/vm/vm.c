@@ -2,11 +2,13 @@
 
 #include "threads/malloc.h"
 #include "vm/vm.h"
+#include "threads/thread.h"
 #include "vm/inspect.h"
 #include "hash.h"
 #include "threads/vaddr.h"
 #include "string.h"
 #include "userprog/process.h"
+#include <stdint.h>
 #define STACK_MAX_SIZE (1 << 20)
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
@@ -151,9 +153,13 @@ static struct frame* vm_get_frame(void)
 }
 
 /* Growing the stack. */
-static void vm_stack_growth(void* addr)
+static void vm_stack_growth(void *addr)
 {
+	void *va = pg_round_down(addr);
+	if (vm_alloc_page(VM_ANON | VM_MARKER_0, va, true))
+		vm_claim_page(va);
 }
+
 
 /* Handle the fault on write_protected page */
 static bool vm_handle_wp(struct page* page)
@@ -171,13 +177,33 @@ bool vm_try_handle_fault(struct intr_frame* f, void* addr, bool user, bool write
         return false;
     if (is_kernel_vaddr(addr))
         return false;
+    page = spt_find_page(spt, addr);
+    uintptr_t user_rsp = user ? f->rsp : thread_current()->rsp;
+
     if (not_present) {
-        page = spt_find_page(spt, addr);
-        if (page == NULL)
-            return false;
-        if (write == 1 && page->writable == 0)
-            return false;
+        if (page == NULL) {
+            bool within_stack = (addr >= USER_STACK - STACK_MAX_SIZE) && (addr < USER_STACK);
+            if (addr >= user_rsp - 8 && within_stack) {
+                vm_stack_growth(addr);
+                page = spt_find_page(spt, addr);
+                if (page == NULL)
+                    return false;
+                return vm_do_claim_page(page);
+            }
+            /* Invalid access: kill the process without printing from page_fault. */
+            thread_current()->exit_num = -1;
+            thread_exit();
+        }
+        if (write && !page->writable) {
+            thread_current()->exit_num = -1;
+            thread_exit();
+        }
         return vm_do_claim_page(page);
+    }
+    /* Present but rights violation (e.g., write to read-only). */
+    if (write && (!page || !page->writable)) {
+        thread_current()->exit_num = -1;
+        thread_exit();
     }
     return false;
 }
