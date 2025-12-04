@@ -15,5 +15,9 @@ struct lazy_load_aux {
     size_t page_read_bytes;
     size_t page_zero_bytes;
 };
+#ifdef VM
+#include "vm/vm.h"
+bool lazy_load_segment(struct page *page, void *aux);
+#endif
 
 #endif /* userprog/process.h */
