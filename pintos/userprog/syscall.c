@@ -128,6 +128,17 @@ static void user_memory_access(const void* addr)
         thread_current()->exit_num = -1;
         thread_exit();
     }
+#ifdef VM
+    if (spt_find_page(&thread_current()->spt, (void*)addr) == NULL) {
+        thread_current()->exit_num = -1;
+        thread_exit();
+    }
+#else
+    if (pml4_get_page(thread_current()->pml4, addr) == NULL) {
+        thread_current()->exit_num = -1;
+        thread_exit();
+    }
+#endif
 }
 
 static bool create(const char* file, unsigned initial_size)
