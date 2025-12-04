@@ -1,9 +1,11 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include "stddef.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/loader.h"
+#include "threads/vaddr.h"
 #include "userprog/gdt.h"
 #include "threads/flags.h"
 #include "intrinsic.h"
@@ -13,6 +15,10 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/init.h"
+#include "vm/file.h"
+#ifdef VM
+#include "vm/vm.h"
+#endif
 
 // true, flase define
 #define TRUE 1
@@ -328,6 +334,25 @@ static unsigned int tell(int fd)
     return -1;
 }
 
+static void* mmap(int fd, void* addr, size_t length, int writable, off_t offset)
+{ // P3 mmap 설명: On failure, it must return NULL which is not a valid address to map a file.
+    if (fd < 2 || addr == NULL || pg_ofs(addr) != 0 || length == 0 || is_kernel_vaddr(addr))
+        return NULL;
+    struct file* file = fd_to_file_for_find(thread_current(), fd);
+    if (file == NULL)
+        return NULL;
+    return do_mmap(addr, length, writable, file, offset);
+}
+
+static void munmap(void* addr)
+{
+    user_memory_access(addr);
+    if (pg_ofs(addr) != 0)
+        return;
+    do_munmap(addr);
+}
+
+
 /* The main system call interface */
 void syscall_handler(struct intr_frame* f)
 {
@@ -395,6 +420,12 @@ void syscall_handler(struct intr_frame* f)
         break;
     case SYS_TELL:
         f->R.rax = tell(f->R.rdi);
+        break;
+    case SYS_MMAP:
+        f->R.rax = (uint64_t)mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+        break;
+    case SYS_MUNMAP:
+        munmap(f->R.rdi);
         break;
     default:
         NOT_REACHED();
