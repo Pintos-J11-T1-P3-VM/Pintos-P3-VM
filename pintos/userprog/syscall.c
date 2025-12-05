@@ -338,6 +338,13 @@ static void* mmap(int fd, void* addr, size_t length, int writable, off_t offset)
 { // P3 mmap 설명: On failure, it must return NULL which is not a valid address to map a file.
     if (fd < 2 || addr == NULL || pg_ofs(addr) != 0 || length == 0 || is_kernel_vaddr(addr))
         return NULL;
+    // offset이 페이지 정렬되어 있지 않으면 실패
+    if (pg_ofs((void*)offset) != 0)
+        return NULL;
+    // addr + length가 커널 영역에 도달하거나 오버플로우하면 실패
+    void* end_addr = (void*)((uintptr_t)addr + length);
+    if (end_addr <= addr || is_kernel_vaddr(end_addr) || is_kernel_vaddr((void*)((uintptr_t)end_addr - 1)))
+        return NULL;
     struct file* file = fd_to_file_for_find(thread_current(), fd);
     if (file == NULL)
         return NULL;
@@ -422,7 +429,7 @@ void syscall_handler(struct intr_frame* f)
         f->R.rax = tell(f->R.rdi);
         break;
     case SYS_MMAP:
-        f->R.rax = (uint64_t)mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+        f->R.rax = (uint64_t)mmap(f->R.r10, f->R.rdi, f->R.rsi, f->R.rdx, f->R.r8);
         break;
     case SYS_MUNMAP:
         munmap(f->R.rdi);

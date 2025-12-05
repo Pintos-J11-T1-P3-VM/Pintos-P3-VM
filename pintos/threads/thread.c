@@ -10,6 +10,7 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 #include "intrinsic.h"
 #include "fixed-point.h"
 #include "threads/init.h"
@@ -206,7 +207,6 @@ tid_t thread_create(const char* name, int priority, thread_func* function, void*
     init_thread(t, name, priority);
     tid = t->tid = allocate_tid();
 
-    // 하....,,,,,....
     struct descriptor* stdin_descript = calloc(1, sizeof(struct descriptor));
     if (stdin_descript == NULL) {
         return -1;
@@ -633,6 +633,7 @@ static void init_thread(struct thread* t, const char* name, int priority)
     t->exit_num = 0;
     list_init(&(t->descrs_t));
     list_init(&(t->childs));
+    list_init(&(t->mmap_list));
     t->parent = NULL;
     sema_init(&t->wait, 0);
     sema_init(&t->load, 0);

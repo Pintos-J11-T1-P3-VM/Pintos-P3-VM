@@ -24,6 +24,7 @@
 
 #ifdef VM
 #include "vm/vm.h"
+#include "vm/file.h"
 #endif
 
 static void process_cleanup(void);
@@ -326,11 +327,19 @@ void process_exit(void)
         sema_up(&child->waiting_parents);
     }
 
+    // mmap된 모든 매핑 해제 (dirty page write back) - pml4가 유효할 때 해야 함
+    while (!list_empty(&curr->mmap_list)) {
+        struct list_elem* e = list_begin(&curr->mmap_list);
+        struct mmap_data* md = list_entry(e, struct mmap_data, mmap_elem);
+        do_munmap(md->addr);
+    }
+
     file_close(curr->exec_file);
     sema_up(&curr->wait);
 
     if (curr->parent != NULL)
         sema_down(&curr->waiting_parents);
+    
     process_cleanup();
     hash_destroy(&curr->spt.hash_table, NULL);
 }
@@ -746,7 +755,7 @@ bool lazy_load_segment(struct page* page, void* aux) //
     if (file_read_at(arg->file, page->frame->kva, arg->page_read_bytes, arg->ofs) != (int)arg->page_read_bytes) {
         if (flag)
             lock_release(&filesys_lock);
-        palloc_free_page(page);
+        palloc_free_page(page->frame->kva);
         return false;
     }
     if (flag)

@@ -3,6 +3,7 @@
 
 #include <debug.h>
 #include <list.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
 #include "threads/synch.h"
@@ -139,11 +140,19 @@ struct thread {
     /* Table for whole virtual memory owned by thread. */
     struct supplemental_page_table spt;
     uintptr_t rsp;
+    struct list mmap_list;
 #endif
 
     /* Owned by thread.c. */
     struct intr_frame tf; /* Information for switching */
     unsigned magic;       /* Detects stack overflow. */
+};
+
+struct mmap_data {
+    void* addr;
+    size_t page_cnt;
+    struct file* file;
+    struct list_elem mmap_elem;
 };
 
 /* If false (default), use round-robin scheduler.

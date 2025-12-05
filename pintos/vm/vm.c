@@ -104,8 +104,8 @@ bool spt_insert_page(struct supplemental_page_table* spt, struct page* page)
 
 void spt_remove_page(struct supplemental_page_table* spt, struct page* page)
 {
+    hash_delete(&spt->hash_table, &page->hash_elem);
     vm_dealloc_page(page);
-    return true;
 }
 
 /* Get the struct frame, that will be evicted. */
@@ -225,7 +225,7 @@ static bool vm_do_claim_page(struct page* page)
     return swap_in(page, frame->kva);
 }
 
-unsigned page_hash(const struct hash_elem* hash_e, void* aux)
+uint64_t page_hash(const struct hash_elem* hash_e, void* aux)
 {
     struct page* page = hash_entry(hash_e, struct page, hash_elem);
     return hash_bytes(&page->va, sizeof(page->va));
@@ -256,8 +256,19 @@ bool supplemental_page_table_copy(struct supplemental_page_table* dst, struct su
         enum vm_type src_type = VM_TYPE(src_page->operations->type);
         void* upage = src_page->va;
         bool writable = src_page->writable;
+        
+        // 기본 과제에서는 mmap 상속 불필요. 
+        // 단, extra(cow) 구현 시에는 이 continue를 제거하고 
+        // 파일 객체 복제(file_reopen) 및 페이지 공유(Read-Only Mapping) 로직으로 대체해야 함.
+        if (src_type == VM_FILE)
+            continue;
+        
         if (src_type == VM_UNINIT) {
             struct uninit_page* src_uninit = &src_page->uninit;
+            // VM_FILE로 바뀔 UNINIT 페이지도 복사하지 않음
+            enum vm_type final_type = VM_TYPE(src_uninit->type);
+            if (final_type == VM_FILE)
+                continue;
             if (src_uninit->aux != NULL) {
                 struct lazy_load_aux* copy_aux = malloc(sizeof(struct lazy_load_aux));
                 if (copy_aux == NULL)
