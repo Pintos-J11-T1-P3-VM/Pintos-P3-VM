@@ -129,10 +129,10 @@ static void user_memory_access(const void* addr)
         thread_exit();
     }
 #ifdef VM
-    if (spt_find_page(&thread_current()->spt, (void*)addr) == NULL) {
-        thread_current()->exit_num = -1;
-        thread_exit();
-    }
+    // if (spt_find_page(&thread_current()->spt, (void*)addr) == NULL) {
+    //     thread_current()->exit_num = -1;
+    //     thread_exit();
+    // }
 #else
     if (pml4_get_page(thread_current()->pml4, addr) == NULL) {
         thread_current()->exit_num = -1;
@@ -201,6 +201,11 @@ static int read(int fd, void* buffer, unsigned size)
     struct thread* curr = thread_current();
     struct file* file = fd_to_file_for_find(curr, fd);
 
+    struct page* page = spt_find_page(&curr->spt, buffer);
+    if (page && !page->writable) {
+        thread_current()->exit_num = -1;
+        thread_exit();
+    }
     if (file == NULL)
         return -1;
     if (file != stdin_f && file != stdout_f) {
