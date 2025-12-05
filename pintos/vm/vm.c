@@ -153,6 +153,10 @@ static struct frame* vm_get_frame(void)
 /* Growing the stack. */
 static void vm_stack_growth(void* addr)
 {
+    addr = pg_round_down(addr);
+    if (!vm_alloc_page(VM_ANON | VM_MARKER_0, addr, true) || !vm_claim_page(addr)) {
+        PANIC("stack growth failed");
+    }
 }
 
 /* Handle the fault on write_protected page */
@@ -173,8 +177,19 @@ bool vm_try_handle_fault(struct intr_frame* f, void* addr, bool user, bool write
         return false;
     if (not_present) {
         page = spt_find_page(spt, addr);
-        if (page == NULL)
-            return false;
+        if (page == NULL) {
+            uintptr_t rsp;
+            if (user)
+                rsp = f->rsp;
+            else
+                rsp = thread_current()->rsp;
+            if (addr >= rsp - 8 && addr >= USER_STACK - (1 << 20) && addr < USER_STACK) { // 1<<20 is 1MB
+                vm_stack_growth(addr);
+                return true;
+            }
+            thread_current()->exit_num = -1;
+            thread_exit();
+        }
         if (write == 1 && page->writable == 0)
             return false;
         return vm_do_claim_page(page);

@@ -122,14 +122,23 @@ struct file* fd_to_file_for_find(struct thread* curr, int fd)
     return NULL;
 }
 
-static void user_memory_access(const void* addr)
+static void user_memory_access(const void* addr, bool do_write UNUSED)
 {
     if (addr == NULL || addr >= KERN_BASE) {
         thread_current()->exit_num = -1;
         thread_exit();
     }
 #ifdef VM
-    if (spt_find_page(&thread_current()->spt, (void*)addr) == NULL) {
+    struct page* page = spt_find_page(&thread_current()->spt, (void*)addr);
+    uintptr_t rsp = thread_current()->rsp;
+    // 스택 영역이면 보내주고 아니면 exit
+    if (page == NULL) {
+        if (!((uintptr_t)addr >= rsp - PGSIZE && (uintptr_t)addr >= USER_STACK - (1 << 20) &&
+              (uintptr_t)addr < USER_STACK)) {
+            thread_current()->exit_num = -1;
+            thread_exit();
+        }
+    } else if (do_write && !page->writable) {
         thread_current()->exit_num = -1;
         thread_exit();
     }
@@ -143,7 +152,7 @@ static void user_memory_access(const void* addr)
 
 static bool create(const char* file, unsigned initial_size)
 {
-    user_memory_access(file);
+    user_memory_access(file, false);
     lock_acquire(&filesys_lock);
     if (filesys_create(file, initial_size)) {
         lock_release(&filesys_lock);
@@ -165,7 +174,7 @@ static int open(const char* file_name)
     struct file* file = NULL;
     struct thread* curr = thread_current();
     int fd;
-    user_memory_access(file_name);
+    user_memory_access(file_name, false);
     lock_acquire(&filesys_lock);
     file = filesys_open(file_name);
     if (file == NULL) {
@@ -194,7 +203,7 @@ static int open(const char* file_name)
 static int read(int fd, void* buffer, unsigned size)
 {
 
-    user_memory_access(buffer);
+    user_memory_access(buffer, true);
     if (fd < 0)
         return -1;
 
@@ -223,7 +232,7 @@ static int read(int fd, void* buffer, unsigned size)
 
 static int write(int fd, void* buffer, unsigned size)
 {
-    user_memory_access(buffer);
+    user_memory_access(buffer, true);
     if (fd < 0)
         return -1;
 
@@ -252,7 +261,7 @@ static int write(int fd, void* buffer, unsigned size)
 static void exec(const char* cmd_line)
 {
     char* fn_copy;
-    user_memory_access(cmd_line);
+    user_memory_access(cmd_line, false);
     fn_copy = palloc_get_page(0);
     if (fn_copy == NULL) {
         thread_current()->exit_num = -1;
@@ -277,12 +286,12 @@ static void seek(int fd, off_t new_pos)
 static tid_t fork(const char* thread_name, struct intr_frame* f)
 {
     tid_t tid;
-    user_memory_access(thread_name);
+    user_memory_access(thread_name, false);
     return process_fork(thread_name, f);
 }
 static bool remove(const char* file)
 {
-    user_memory_access(file);
+    user_memory_access(file, false);
     return filesys_remove(file);
 }
 
