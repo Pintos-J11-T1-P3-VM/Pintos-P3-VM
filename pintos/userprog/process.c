@@ -213,9 +213,8 @@ static void __do_fork(void* aux)
             else
                 dup_file = parent_descript->file;
             struct descriptor* child_descript = calloc(1, sizeof(struct descriptor));
-            if (child_descript == NULL) {
+            if (child_descript == NULL)
                 goto error;
-            }
             child_descript->fd = parent_descript->fd;
             child_descript->file = dup_file;
             child_descript->file->refcnt++;
@@ -307,6 +306,11 @@ void process_exit(void)
      * TODO: Implement process termination message (see
      * TODO: project2/process_termination.html).
      * TODO: We recommend you to implement process resource cleanup here. */
+    /* If we are dying while holding the filesys_lock (e.g., fault during sys_open),
+       release it to avoid self-deadlock/assertion on cleanup. */
+    if (lock_held_by_current_thread(&filesys_lock))
+        lock_release(&filesys_lock);
+
     if (curr->pml4 == NULL) {
         return;
     }
@@ -320,10 +324,12 @@ void process_exit(void)
     }
 
     while (!list_empty(&curr->childs)) {
+        enum intr_level old_level = intr_disable();
         struct list_elem* e = list_begin(&curr->childs);
         struct thread* child = list_entry(e, struct thread, child_elem);
 
         list_remove(e);
+        intr_set_level(old_level);
         sema_up(&child->waiting_parents);
     }
 
@@ -339,7 +345,7 @@ void process_exit(void)
 
     if (curr->parent != NULL)
         sema_down(&curr->waiting_parents);
-    
+
     process_cleanup();
     hash_destroy(&curr->spt.hash_table, NULL);
 }
@@ -746,7 +752,7 @@ bool lazy_load_segment(struct page* page, void* aux) //
     /* TODO: Load the segment from the file */
     /* TODO: This called when the first page fault occurs on address VA. */
     /* TODO: VA is available when calling this function. */
-    struct lazy_load_aux* arg = (struct lazy_load_aux*)aux;
+    struct file_page* arg = (struct file_page*)aux;
     bool flag = false;
     if (!lock_held_by_current_thread(&filesys_lock)) {
         lock_acquire(&filesys_lock);
@@ -794,16 +800,16 @@ static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t 
         size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
         /* TODO: Set up aux to pass information to the lazy_load_segment. */
-        struct lazy_load_aux* lazy_load_aux = malloc(sizeof(struct lazy_load_aux));
-        if (lazy_load_aux == NULL)
+        struct file_page* file_page_aux = malloc(sizeof(struct file_page));
+        if (file_page_aux == NULL)
             return false;
-        lazy_load_aux->file = file;
-        lazy_load_aux->ofs = ofs;
-        lazy_load_aux->page_read_bytes = page_read_bytes;
-        lazy_load_aux->page_zero_bytes = page_zero_bytes;
+        file_page_aux->file = file;
+        file_page_aux->ofs = ofs;
+        file_page_aux->page_read_bytes = page_read_bytes;
+        file_page_aux->page_zero_bytes = page_zero_bytes;
 
-        if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, lazy_load_aux)) {
-            free(lazy_load_aux);
+        if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, file_page_aux)) {
+            free(file_page_aux);
             return false;
         }
 

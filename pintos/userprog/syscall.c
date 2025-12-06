@@ -103,8 +103,11 @@ int fd_to_file_for_remove(struct thread* curr, int fd)
             // 여기 주의
             if (descript->file != stdin_f && descript->file != stdout_f) {
                 descript->file->refcnt--;
-                if (descript->file->refcnt < 1)
+                if (descript->file->refcnt < 1) {
+                    lock_acquire(&filesys_lock);
                     file_close(descript->file);
+                    lock_release(&filesys_lock);
+                }
             }
             free(descript);
             return true;
@@ -187,6 +190,7 @@ static int open(const char* file_name)
     struct descriptor* descript = calloc(1, sizeof(struct descriptor));
     if (descript == NULL) {
         file_close(file);
+        lock_release(&filesys_lock);
         return -1;
     }
     descript->fd = fd;

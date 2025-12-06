@@ -388,6 +388,17 @@ void thread_exit(void)
 #ifdef USERPROG
     process_exit();
 #endif
+    /* Clean up donation links to avoid dangling pointers. */
+    struct thread* cur = thread_current();
+    /* If we are waiting on some lock, detach our donation_elem from its holder. */
+    if (cur->lock_on_wait != NULL)
+        list_remove(&cur->donation_elem);
+    /* Remove all donor entries pointing to us. */
+    while (!list_empty(&cur->donation)) {
+        struct list_elem* e = list_pop_front(&cur->donation);
+        struct thread* donor = list_entry(e, struct thread, donation_elem);
+        donor->lock_on_wait = NULL;
+    }
 
     /* Just set our status to dying and schedule another process.
        We will be destroyed during the call to schedule_tail(). */

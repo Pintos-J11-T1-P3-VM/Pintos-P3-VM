@@ -9,12 +9,7 @@ int process_exec(void* f_name);
 int process_wait(tid_t);
 void process_exit(void);
 void process_activate(struct thread* next);
-struct lazy_load_aux {
-    struct file* file;
-    off_t ofs;
-    size_t page_read_bytes;
-    size_t page_zero_bytes;
-};
+
 #ifdef VM
 #include "vm/vm.h"
 bool lazy_load_segment(struct page *page, void *aux);

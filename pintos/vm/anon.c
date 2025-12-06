@@ -2,6 +2,7 @@
 
 #include "vm/vm.h"
 #include "devices/disk.h"
+#include "threads/mmu.h"
 
 /* DO NOT MODIFY BELOW LINE */
 static struct disk* swap_disk;
@@ -49,4 +50,15 @@ static bool anon_swap_out(struct page* page)
 static void anon_destroy(struct page* page)
 {
     struct anon_page* anon_page = &page->anon;
+    struct thread* cur = thread_current();
+    
+    /* frame이 할당되어 있으면 해제 */
+    if (page->frame != NULL)
+    {
+        /* pml4에서 매핑 해제 (pml4_destroy에서 double free 방지) */
+        pml4_clear_page(cur->pml4, page->va);
+        palloc_free_page(page->frame->kva);
+        free(page->frame);
+        page->frame = NULL;
+    }
 }

@@ -1,8 +1,11 @@
 /* vm.c: Generic interface for virtual memory objects. */
 
 #include "threads/malloc.h"
+#include "threads/mmu.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
+#include "vm/file.h"
+#include "userprog/syscall.h"
 #include "hash.h"
 #include "threads/vaddr.h"
 #include "string.h"
@@ -72,7 +75,11 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void* upage, bool writabl
         }
         uninit_new(p, upage, init, type, aux, page_initializer);
         p->writable = writable;
-        return spt_insert_page(spt, p);
+        if (!spt_insert_page(spt, p)) {
+            free(p);
+            return false;
+        }
+        return true;
     }
 err:
     return false;
@@ -183,9 +190,9 @@ bool vm_try_handle_fault(struct intr_frame* f, void* addr, bool user, bool write
         page = spt_find_page(spt, addr);
         if (page == NULL)
             return false;
-        if (write == 1 && page->writable == 0)
+        if (!vm_do_claim_page(page))
             return false;
-        return vm_do_claim_page(page);
+        return true;
     }
     return false;
 }
@@ -213,6 +220,8 @@ bool vm_claim_page(void* va)
 static bool vm_do_claim_page(struct page* page)
 {
     struct frame* frame = vm_get_frame();
+    if (frame == NULL)
+        return false;
 
     /* Set links */
     frame->page = page;
@@ -220,9 +229,22 @@ static bool vm_do_claim_page(struct page* page)
 
     /* TODO: Insert page table entry to map page's VA to frame's PA. */
     struct thread* current = thread_current();
-    pml4_set_page(current->pml4, page->va, frame->kva, page->writable);
+    if (!pml4_set_page(current->pml4, page->va, frame->kva, page->writable)) {
+        palloc_free_page(frame->kva);
+        free(frame);
+        page->frame = NULL;
+        return false;
+    }
 
-    return swap_in(page, frame->kva);
+    if (!swap_in(page, frame->kva)) {
+        /* swap_in 실패 시 정리 */
+        pml4_clear_page(current->pml4, page->va);
+        palloc_free_page(frame->kva);
+        free(frame);
+        page->frame = NULL;
+        return false;
+    }
+    return true;
 }
 
 uint64_t page_hash(const struct hash_elem* hash_e, void* aux)
@@ -270,26 +292,48 @@ bool supplemental_page_table_copy(struct supplemental_page_table* dst, struct su
             if (final_type == VM_FILE)
                 continue;
             if (src_uninit->aux != NULL) {
-                struct lazy_load_aux* copy_aux = malloc(sizeof(struct lazy_load_aux));
+                struct file_page* copy_aux = malloc(sizeof(struct file_page));
                 if (copy_aux == NULL)
-                    return false;
-                memcpy(copy_aux, src_uninit->aux, sizeof(struct lazy_load_aux));
-                if (!vm_alloc_page_with_initializer(src_uninit->type, upage, writable, src_uninit->init, copy_aux))
-                    return false;
+                    goto err;
+                memcpy(copy_aux, src_uninit->aux, sizeof(struct file_page));
+                
+                // lazy_load_segment의 경우 file 객체를 reopen하여 독립적인 참조 생성
+                if (src_uninit->init == lazy_load_segment) {
+                    copy_aux->file = file_reopen(copy_aux->file);
+                    if (copy_aux->file == NULL) {
+                        free(copy_aux);
+                        goto err;
+                    }
+                }
+
+                if (!vm_alloc_page_with_initializer(src_uninit->type, upage, writable, src_uninit->init, copy_aux)) {
+                    if (src_uninit->init == lazy_load_segment) {
+                        lock_acquire(&filesys_lock);
+                        file_close(copy_aux->file);
+                        lock_release(&filesys_lock);
+                    }
+                    free(copy_aux);
+                    goto err;
+                }
             } else {
                 if (!vm_alloc_page(src_uninit->type, upage, writable))
-                    return false;
+                    goto err;
             }
             continue;
         }
         if (!vm_alloc_page(src_type, upage, writable))
-            return false;
+            goto err;
         if (!vm_claim_page(upage))
-            return false;
+            goto err;
         struct page* dst_page = spt_find_page(dst, upage);
         memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
     }
     return true;
+
+err:
+    /* 실패 시 이미 복사된 페이지들 정리 */
+    supplemental_page_table_kill(dst);
+    return false;
 }
 
 /* Free the resource hold by the supplemental page table */
