@@ -104,6 +104,7 @@ tid_t process_fork(const char* name, struct intr_frame* if_)
         return TID_ERROR;
     }
     struct list_elem* iter;
+    enum intr_level old_level = intr_disable();
     for (iter = list_begin(&parent->childs); iter != list_end(&parent->childs); iter = list_next(iter)) {
         child = list_entry(iter, struct thread, child_elem);
         if (child->tid == child_tid) {
@@ -111,6 +112,7 @@ tid_t process_fork(const char* name, struct intr_frame* if_)
             break;
         }
     }
+    intr_set_level(old_level);
     if (child->exit_num == -1) {
         sema_up(&child->waiting_parents);
         list_remove(&child->child_elem);
@@ -218,7 +220,9 @@ static void __do_fork(void* aux)
             child_descript->fd = parent_descript->fd;
             child_descript->file = dup_file;
             child_descript->file->refcnt++;
+            enum intr_level old_level = intr_disable();
             list_insert_ordered(&(current->descrs_t), &(child_descript->desc_elem), cmp_fd_less, NULL);
+            intr_set_level(old_level);
         }
     }
 
@@ -327,12 +331,12 @@ void process_exit(void)
     }
 
     file_close(curr->exec_file);
+    process_cleanup();
+    hash_destroy(&curr->spt.hash_table, NULL);
     sema_up(&curr->wait);
 
     if (curr->parent != NULL)
         sema_down(&curr->waiting_parents);
-    process_cleanup();
-    hash_destroy(&curr->spt.hash_table, NULL);
 }
 
 /* Free the current process's resources. */

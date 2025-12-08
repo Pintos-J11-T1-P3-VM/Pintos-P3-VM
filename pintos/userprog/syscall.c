@@ -328,6 +328,24 @@ static unsigned int tell(int fd)
     return -1;
 }
 
+static void* mmap(void* addr, size_t length, int writable, int fd, off_t offset)
+{
+    if (fd < 2)
+        return NULL;
+    struct file* file = fd_to_file_for_find(thread_current(), fd);
+    if (file == NULL || addr == NULL || pg_ofs(addr) != 0 || pg_ofs(offset) != 0 || length == 0 || offset < 0)
+        return NULL;
+    if (is_kernel_vaddr(addr) || (addr + length - 1 < addr) ||
+        is_kernel_vaddr((void*)((uintptr_t)addr + length - 1))) // should check if overflow occurs
+        return NULL;
+    return do_mmap(addr, length, writable, file, offset);
+}
+
+static void munmap(void* addr)
+{
+    if (addr != NULL)
+        do_munmap(addr);
+}
 /* The main system call interface */
 void syscall_handler(struct intr_frame* f)
 {
@@ -395,6 +413,12 @@ void syscall_handler(struct intr_frame* f)
         break;
     case SYS_TELL:
         f->R.rax = tell(f->R.rdi);
+        break;
+    case SYS_MMAP:
+        f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+        break;
+    case SYS_MUNMAP:
+        munmap((void*)f->R.rdi);
         break;
     default:
         NOT_REACHED();

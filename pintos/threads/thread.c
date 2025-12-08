@@ -228,7 +228,11 @@ tid_t thread_create(const char* name, int priority, thread_func* function, void*
     // thread
     struct thread* parent = thread_current();
     t->parent = parent;
+
+    enum intr_level old_level = intr_disable();
     list_push_front(&(parent->childs), &(t->child_elem));
+    intr_set_level(old_level);
+
     /* Call the kernel_thread if it scheduled.
      * Note) rdi is 1st argument, and rsi is 2nd argument. */
     t->tf.rip = (uintptr_t)kernel_thread;

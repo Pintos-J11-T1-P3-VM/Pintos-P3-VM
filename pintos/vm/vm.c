@@ -104,8 +104,9 @@ bool spt_insert_page(struct supplemental_page_table* spt, struct page* page)
 
 void spt_remove_page(struct supplemental_page_table* spt, struct page* page)
 {
+    hash_delete(&spt->hash_table, &page->hash_elem);
     vm_dealloc_page(page);
-    return true;
+    return;
 }
 
 /* Get the struct frame, that will be evicted. */
@@ -256,8 +257,14 @@ bool supplemental_page_table_copy(struct supplemental_page_table* dst, struct su
         enum vm_type src_type = VM_TYPE(src_page->operations->type);
         void* upage = src_page->va;
         bool writable = src_page->writable;
+
+        if (page_get_type(src_page) == VM_FILE)
+            continue;
+
         if (src_type == VM_UNINIT) {
             struct uninit_page* src_uninit = &src_page->uninit;
+            if (VM_TYPE(src_uninit->type) == VM_FILE)
+                continue;
             if (src_uninit->aux != NULL) {
                 struct lazy_load_aux* copy_aux = malloc(sizeof(struct lazy_load_aux));
                 if (copy_aux == NULL)
