@@ -59,7 +59,6 @@ static bool uninit_initialize(struct page* page, void* kva)
 static void uninit_destroy(struct page* page)
 {
     struct uninit_page* uninit = &page->uninit;
-    /* aux가 할당되어 있으면 해제 (lazy_load_aux 등) */
     if (uninit->aux != NULL)
         free(uninit->aux);
 }

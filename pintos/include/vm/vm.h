@@ -49,6 +49,7 @@ struct page {
     /* Your implementation */
     struct hash_elem hash_elem;
     bool writable;
+    struct thread* accessible_thread;
     /* Per-type data are binded into the union.
      * Each function automatically detects the current union */
     union {
@@ -65,6 +66,8 @@ struct page {
 struct frame {
     void* kva;
     struct page* page;
+    struct list_elem frame_elem;
+    bool in_table;
 };
 
 /* The function table for page operations.
@@ -106,6 +109,7 @@ bool vm_try_handle_fault(struct intr_frame* f, void* addr, bool user, bool write
 bool vm_alloc_page_with_initializer(enum vm_type type, void* upage, bool writable, vm_initializer* init, void* aux);
 void vm_dealloc_page(struct page* page);
 bool vm_claim_page(void* va);
+void vm_free_frame(struct frame* frame);
 enum vm_type page_get_type(struct page* page);
 void hash_desroy_action(struct hash_elem* hash_elem, void* aux);
 

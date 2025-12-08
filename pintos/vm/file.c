@@ -66,7 +66,7 @@ static bool file_backed_swap_in(struct page* page, void* kva)
 static bool file_backed_swap_out(struct page* page)
 {
     struct file_page* file_page = &page->file;
-    struct thread* cur = thread_current();
+    struct thread* cur = page->accessible_thread;
     
     // dirty면 파일에 write back
     if (pml4_is_dirty(cur->pml4, page->va))
@@ -104,8 +104,8 @@ static void file_backed_destroy(struct page* page)
     // frame 해제
     if (page->frame != NULL)
     {
-        palloc_free_page(page->frame->kva);
-        free(page->frame);
+        page->frame->page = NULL; // vm_free_frame의 ASSERT 통과용
+        vm_free_frame(page->frame);
         page->frame = NULL;
     }
 }
