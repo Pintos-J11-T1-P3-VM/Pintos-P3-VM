@@ -42,6 +42,7 @@ bool file_backed_initializer(struct page* page, enum vm_type type, void* kva)
     file_page->ofs = aux->ofs;
     file_page->page_read_bytes = aux->page_read_bytes;
     file_page->page_zero_bytes = aux->page_zero_bytes;
+    free(aux);
 
     return true;
 }
