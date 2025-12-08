@@ -126,22 +126,22 @@ void spt_remove_page(struct supplemental_page_table* spt, struct page* page)
     vm_dealloc_page(page);
 }
 
+/* Helper function for circular list traversal */
+static struct list_elem* get_next_frame_elem(struct list_elem *elem) {
+    struct list_elem *next_elem = list_next(elem);
+    if (next_elem == list_end(&frame_table))
+        next_elem = list_begin(&frame_table);
+    return next_elem;
+}
+
 /* Get the struct frame, that will be evicted. */
 static struct frame* vm_get_victim(void)
 {
     ASSERT(!list_empty(&frame_table));
-    // printf("DEBUG: vm_get_victim start\n");
 
     if (next == NULL || next == list_end(&frame_table))
         next = list_begin(&frame_table);
     
-    // ... existing logic ...
-
-    // after loop
-    // if (victim != NULL) printf("DEBUG: vm_get_victim: found victim %p\n", victim);
-    // else printf("DEBUG: vm_get_victim: failed\n");
-
-
     struct list_elem *start = next;
     struct frame *victim = NULL;
 
@@ -188,25 +188,19 @@ static struct frame* vm_get_victim(void)
                 }
             }
 
-            next = list_next(next);
-            if (next == list_end(&frame_table))
-                next = list_begin(&frame_table);
+            next = get_next_frame_elem(next);
         } while (next != start);
 
         // 다음 탐색 위치 설정
         if (victim == NULL) {
-            next = list_next(start);
-            if (next == list_end(&frame_table))
-                next = list_begin(&frame_table);
+            next = get_next_frame_elem(start);
             start = next;
         }
     }
 
     // next를 victim 다음으로 이동
     if (victim != NULL) {
-        next = list_next(&victim->frame_elem);
-        if (next == list_end(&frame_table))
-            next = list_begin(&frame_table);
+        next = get_next_frame_elem(&victim->frame_elem);
     }
     return victim;
 }
