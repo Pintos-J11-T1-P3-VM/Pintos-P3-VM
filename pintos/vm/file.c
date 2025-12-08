@@ -130,8 +130,8 @@ void* do_mmap(void* addr, size_t length, int writable, struct file* file, off_t 
         return NULL;
     }
     size_t available_len = file_len - offset;
-    /* 실제 매핑할 길이는 파일 길이와 요청 길이 중 작은 값 (offset 반영) */
-    size_t map_length = length < available_len ? length : available_len;
+    /* 실제 매핑할 길이는 요청 길이만큼 (파일보다 길면 0으로 채움) */
+    size_t map_length = length;
     lock_release(&filesys_lock);
 
     // 2. 페이지 수 계산
@@ -164,7 +164,9 @@ void* do_mmap(void* addr, size_t length, int writable, struct file* file, off_t 
     m_data->file = reopened_file;
 
     // 5. 페이지 할당 루프 (lazy loading)
-    size_t remain_bytes = map_length;
+    size_t remain_bytes = available_len > length ? length : available_len;
+    // remain_bytes는 파일에서 읽을 수 있는 유효 길이 (요청 길이와 파일 잔여 길이 중 작은 값)
+    
     size_t allocated_pages = 0;
 
     for (size_t i = 0; i < page_cnt; i++)
@@ -183,14 +185,17 @@ void* do_mmap(void* addr, size_t length, int writable, struct file* file, off_t 
         aux->page_read_bytes = read_bytes;
         aux->page_zero_bytes = zero_bytes;
 
-        if (!vm_alloc_page_with_initializer(VM_FILE, va, writable, lazy_load_segment, aux))
+        if (!vm_alloc_page_with_initializer(VM_FILE, va, writable, file_backed_initializer, aux))
         {
             free(aux);
             goto mmap_fail;
         }
 
         allocated_pages++;
-        remain_bytes -= read_bytes;
+        if (remain_bytes >= PGSIZE)
+             remain_bytes -= PGSIZE;
+        else
+             remain_bytes = 0;
     }
     goto mmap_success;
 
@@ -252,6 +257,7 @@ void do_munmap(void* addr)
             lock_acquire(&filesys_lock);
             file_write_at(m_data->file, page->frame->kva, file_page->page_read_bytes, file_page->ofs);
             lock_release(&filesys_lock);
+            pml4_set_dirty(cur->pml4, va, false);
         }
 
         // SPT에서 제거 (내부에서 destroy 호출됨)
