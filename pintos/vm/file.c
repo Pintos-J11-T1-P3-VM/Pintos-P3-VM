@@ -42,7 +42,6 @@ bool file_backed_initializer(struct page* page, enum vm_type type, void* kva)
     file_page->ofs = aux->ofs;
     file_page->page_read_bytes = aux->page_read_bytes;
     file_page->page_zero_bytes = aux->page_zero_bytes;
-    free(aux);
 
     return true;
 }
@@ -186,7 +185,7 @@ void* do_mmap(void* addr, size_t length, int writable, struct file* file, off_t 
         aux->page_read_bytes = read_bytes;
         aux->page_zero_bytes = zero_bytes;
 
-        if (!vm_alloc_page_with_initializer(VM_FILE, va, writable, file_backed_initializer, aux))
+        if (!vm_alloc_page_with_initializer(VM_FILE, va, writable, lazy_load_segment, aux))
         {
             free(aux);
             goto mmap_fail;
