@@ -187,12 +187,13 @@ bool vm_try_handle_fault(struct intr_frame* f, void* addr, bool user, bool write
             (USER_STACK - STACK_MAX_SIZE <= rsp && rsp <= addr && addr <= USER_STACK))
             vm_stack_growth(addr);
 
-        page = spt_find_page(spt, addr);
-        if (page == NULL)
-            return false;
-        if (!vm_do_claim_page(page))
-            return false;
-        return true;
+            page = spt_find_page(spt, addr);
+            if (page == NULL)
+                return false;
+            if (write && !page->writable)
+                return false;
+            if (!vm_do_claim_page(page))
+                return false;        return true;
     }
     return false;
 }
