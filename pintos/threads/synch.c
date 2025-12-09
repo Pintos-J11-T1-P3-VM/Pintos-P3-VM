@@ -72,21 +72,16 @@ static bool cmp_done_priority(const struct list_elem* a, const struct list_elem*
 static void kill_donor(struct lock* lock)
 {
     struct list* donations = &(thread_current()->donation);
-    struct list_elem* donor_elem;
-    struct thread* donor_thread;
+    struct list_elem* donor_elem = list_begin(donations);
 
-    if (list_empty(donations))
-        return;
-
-    donor_elem = list_front(donations);
-
-    while (1) {
-        donor_thread = list_entry(donor_elem, struct thread, donation_elem);
-        if (donor_thread->lock_on_wait == lock)
-            list_remove(&donor_thread->donation_elem);
-        donor_elem = list_next(donor_elem);
-        if (donor_elem == list_end(donations))
-            return;
+    while (donor_elem != list_end(donations)) {
+        struct thread* donor_thread = list_entry(donor_elem, struct thread, donation_elem);
+        struct list_elem* next = list_next(donor_elem);
+        if (donor_thread->lock_on_wait == lock) {
+            list_remove(donor_elem);
+            donor_thread->lock_on_wait = NULL;
+        }
+        donor_elem = next;
     }
 }
 
