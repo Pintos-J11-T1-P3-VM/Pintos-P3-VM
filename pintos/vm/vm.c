@@ -406,17 +406,6 @@ bool supplemental_page_table_copy(struct supplemental_page_table* dst, struct su
                 if (copy_aux == NULL)
                     goto err;
                 memcpy(copy_aux, src_uninit->aux, sizeof(struct file_page));
-                // fork할때, lazy_load_segment의 경우 exec_file 객체를 duplicate하여 독립적인 참조 생성
-                if (src_uninit->init == lazy_load_segment) {
-                    lock_acquire(&filesys_lock);
-                    copy_aux->file = file_duplicate(copy_aux->file);
-                    lock_release(&filesys_lock);
-                    if (copy_aux->file == NULL) {
-                        free(copy_aux);
-                        goto err;
-                    }
-                }
-
                 if (!vm_alloc_page_with_initializer(src_uninit->type, upage, writable, src_uninit->init, copy_aux)) {
                     if (src_uninit->init == lazy_load_segment) {
                         lock_acquire(&filesys_lock);
