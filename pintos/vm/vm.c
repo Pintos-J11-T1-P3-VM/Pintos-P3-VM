@@ -1,8 +1,10 @@
 /* vm.c: Generic interface for virtual memory objects. */
 
+#include "filesys/file.h"
 #include "threads/malloc.h"
 #include "threads/mmu.h"
 #include "vm/vm.h"
+#include "threads/synch.h"
 #include "vm/inspect.h"
 #include "vm/file.h"
 #include "userprog/syscall.h"
@@ -10,6 +12,7 @@
 #include "threads/vaddr.h"
 #include "string.h"
 #include "userprog/process.h"
+#include <stdint.h>
 #define STACK_MAX_SIZE (1 << 20)
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
@@ -180,7 +183,7 @@ bool vm_try_handle_fault(struct intr_frame* f, void* addr, bool user, bool write
     if (is_kernel_vaddr(addr))
         return false;
     if (not_present) {
-        void* rsp = f->rsp;
+        uintptr_t rsp = f->rsp;
         if (!user)
             rsp = thread_current()->rsp;
         if ((USER_STACK - STACK_MAX_SIZE <= rsp - 8 && rsp - 8 == addr && addr <= USER_STACK) ||
@@ -193,7 +196,8 @@ bool vm_try_handle_fault(struct intr_frame* f, void* addr, bool user, bool write
             if (write && !page->writable)
                 return false;
             if (!vm_do_claim_page(page))
-                return false;        return true;
+                return false;        
+            return true;
     }
     return false;
 }
@@ -297,10 +301,11 @@ bool supplemental_page_table_copy(struct supplemental_page_table* dst, struct su
                 if (copy_aux == NULL)
                     goto err;
                 memcpy(copy_aux, src_uninit->aux, sizeof(struct file_page));
-                
-                // lazy_load_segment의 경우 file 객체를 reopen하여 독립적인 참조 생성
+                // fork할때, lazy_load_segment의 경우 exec_file 객체를 duplicate하여 독립적인 참조 생성
                 if (src_uninit->init == lazy_load_segment) {
-                    copy_aux->file = file_reopen(copy_aux->file);
+                    lock_acquire(&filesys_lock);
+                    copy_aux->file = file_duplicate(copy_aux->file);
+                    lock_release(&filesys_lock);
                     if (copy_aux->file == NULL) {
                         free(copy_aux);
                         goto err;
