@@ -1,15 +1,16 @@
 #ifndef VM_FILE_H
 #define VM_FILE_H
 #include "filesys/file.h"
+#include "vm/vm.h"
 
 struct page;
 enum vm_type;
 
 struct file_page {
     struct file* file;
-    off_t ofs;
-    size_t page_read_bytes;
-    size_t page_zero_bytes;
+    off_t offset;
+    size_t length;
+    int writable;
 };
 
 void vm_file_init(void);

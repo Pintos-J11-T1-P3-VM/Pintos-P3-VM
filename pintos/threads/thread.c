@@ -10,7 +10,6 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-#include "threads/malloc.h"
 #include "intrinsic.h"
 #include "fixed-point.h"
 #include "threads/init.h"
@@ -207,6 +206,7 @@ tid_t thread_create(const char* name, int priority, thread_func* function, void*
     init_thread(t, name, priority);
     tid = t->tid = allocate_tid();
 
+    // 하....,,,,,....
     struct descriptor* stdin_descript = calloc(1, sizeof(struct descriptor));
     if (stdin_descript == NULL) {
         return -1;
@@ -228,7 +228,11 @@ tid_t thread_create(const char* name, int priority, thread_func* function, void*
     // thread
     struct thread* parent = thread_current();
     t->parent = parent;
+
+    enum intr_level old_level = intr_disable();
     list_push_front(&(parent->childs), &(t->child_elem));
+    intr_set_level(old_level);
+
     /* Call the kernel_thread if it scheduled.
      * Note) rdi is 1st argument, and rsi is 2nd argument. */
     t->tf.rip = (uintptr_t)kernel_thread;
@@ -388,17 +392,6 @@ void thread_exit(void)
 #ifdef USERPROG
     process_exit();
 #endif
-    /* Clean up donation links to avoid dangling pointers. */
-    struct thread* cur = thread_current();
-    /* If we are waiting on some lock, detach our donation_elem from its holder. */
-    if (cur->lock_on_wait != NULL)
-        list_remove(&cur->donation_elem);
-    /* Remove all donor entries pointing to us. */
-    while (!list_empty(&cur->donation)) {
-        struct list_elem* e = list_pop_front(&cur->donation);
-        struct thread* donor = list_entry(e, struct thread, donation_elem);
-        donor->lock_on_wait = NULL;
-    }
 
     /* Just set our status to dying and schedule another process.
        We will be destroyed during the call to schedule_tail(). */
@@ -644,7 +637,6 @@ static void init_thread(struct thread* t, const char* name, int priority)
     t->exit_num = 0;
     list_init(&(t->descrs_t));
     list_init(&(t->childs));
-    list_init(&(t->mmap_list));
     t->parent = NULL;
     sema_init(&t->wait, 0);
     sema_init(&t->load, 0);

@@ -1,11 +1,9 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
-#include "stddef.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/loader.h"
-#include "threads/vaddr.h"
 #include "userprog/gdt.h"
 #include "threads/flags.h"
 #include "intrinsic.h"
@@ -15,10 +13,6 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/init.h"
-#include "vm/file.h"
-#ifdef VM
-#include "vm/vm.h"
-#endif
 
 // true, flase define
 #define TRUE 1
@@ -103,11 +97,8 @@ int fd_to_file_for_remove(struct thread* curr, int fd)
             // 여기 주의
             if (descript->file != stdin_f && descript->file != stdout_f) {
                 descript->file->refcnt--;
-                if (descript->file->refcnt < 1) {
-                    lock_acquire(&filesys_lock);
+                if (descript->file->refcnt < 1)
                     file_close(descript->file);
-                    lock_release(&filesys_lock);
-                }
             }
             free(descript);
             return true;
@@ -190,7 +181,6 @@ static int open(const char* file_name)
     struct descriptor* descript = calloc(1, sizeof(struct descriptor));
     if (descript == NULL) {
         file_close(file);
-        lock_release(&filesys_lock);
         return -1;
     }
     descript->fd = fd;
@@ -339,31 +329,23 @@ static unsigned int tell(int fd)
 }
 
 static void* mmap(void* addr, size_t length, int writable, int fd, off_t offset)
-{ // P3 mmap 설명: On failure, it must return NULL which is not a valid address to map a file.
-    if (fd < 2 || addr == NULL || pg_ofs(addr) != 0 || length == 0 || is_kernel_vaddr(addr))
-        return NULL;
-    // offset이 페이지 정렬되어 있지 않으면 실패
-    if (pg_ofs((void*)offset) != 0)
-        return NULL;
-    // addr + length가 커널 영역에 도달하거나 오버플로우하면 실패
-    void* end_addr = (void*)((uintptr_t)addr + length);
-    if (end_addr <= addr || is_kernel_vaddr(end_addr) || is_kernel_vaddr((void*)((uintptr_t)end_addr - 1)))
+{
+    if (fd < 2)
         return NULL;
     struct file* file = fd_to_file_for_find(thread_current(), fd);
-    if (file == NULL)
+    if (file == NULL || addr == NULL || pg_ofs(addr) != 0 || pg_ofs(offset) != 0 || length == 0 || offset < 0)
+        return NULL;
+    if (is_kernel_vaddr(addr) || (addr + length - 1 < addr) ||
+        is_kernel_vaddr((void*)((uintptr_t)addr + length - 1))) // should check if overflow occurs
         return NULL;
     return do_mmap(addr, length, writable, file, offset);
 }
 
 static void munmap(void* addr)
 {
-    user_memory_access(addr);
-    if (pg_ofs(addr) != 0)
-        return;
-    do_munmap(addr);
+    if (addr != NULL)
+        do_munmap(addr);
 }
-
-
 /* The main system call interface */
 void syscall_handler(struct intr_frame* f)
 {
@@ -433,10 +415,10 @@ void syscall_handler(struct intr_frame* f)
         f->R.rax = tell(f->R.rdi);
         break;
     case SYS_MMAP:
-        f->R.rax = (uint64_t)mmap((void*)f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+        f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
         break;
     case SYS_MUNMAP:
-        munmap(f->R.rdi);
+        munmap((void*)f->R.rdi);
         break;
     default:
         NOT_REACHED();

@@ -1,26 +1,23 @@
 /* vm.c: Generic interface for virtual memory objects. */
 
-#include "filesys/file.h"
+#include "hash.h"
 #include "list.h"
-#include "stddef.h"
+#include "string.h"
 #include "threads/malloc.h"
 #include "threads/mmu.h"
-#include "vm/vm.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
-#include "vm/inspect.h"
-#include "vm/file.h"
-#include "userprog/syscall.h"
-#include "hash.h"
 #include "threads/vaddr.h"
-#include "string.h"
 #include "userprog/process.h"
+#include "vm/inspect.h"
 #include <stdint.h>
+#include "vm/vm.h"
 #define STACK_MAX_SIZE (1 << 20)
 
 static struct list frame_table;
 static struct lock frame_lock;
 static struct list_elem* next;
+
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void vm_init(void)
@@ -125,14 +122,7 @@ void spt_remove_page(struct supplemental_page_table* spt, struct page* page)
 {
     hash_delete(&spt->hash_table, &page->hash_elem);
     vm_dealloc_page(page);
-}
-
-/* Helper function for circular list traversal */
-static struct list_elem* get_next_frame_elem(struct list_elem *elem) {
-    struct list_elem *next_elem = list_next(elem);
-    if (next_elem == list_end(&frame_table))
-        next_elem = list_begin(&frame_table);
-    return next_elem;
+    return;
 }
 
 /* Get the struct frame, that will be evicted. */
@@ -142,33 +132,15 @@ static struct frame* vm_get_victim(void)
 
     if (next == NULL || next == list_end(&frame_table))
         next = list_begin(&frame_table);
-    
-    struct list_elem *start = next;
-    struct frame *victim = NULL;
 
-    /*
-        1. 우선순위
-            - 비어있는 프레임
-        2. 그 다음으로는
-            - 접근 비트 0이면서,
-                - dirty 비트 0
-                - dirty 비트 1
-        3. 접근 비트 1인 경우에는 접근 비트를 0으로 만들고 다음 프레임으로 이동
-        
-        trial가 1이 되는 경우는 2가지가 존재
-            1. 한 바퀴를 돌았는데 victim이 선정되지 않은 경우
-                - 모두 accessed 가 1인 경우
-                - 모두 accessed 가 0이지만 dirty 가 1인 경우
-            2. 두 번째 탐색에서는 무조건 victim이 선정됨
-                - 이전에 모든 접근비트를 0으로 만들었기 때문에 이후 발견되는 첫번째 접근비트 0인 프레임이 victim이 됨
-    */
-    // second chance(개념)를 clock(구현체)으로 구현
+    struct list_elem* start = next;
+    struct frame* victim = NULL;
+
     for (int trial = 0; trial < 2 && victim == NULL; trial++) {
-        do { // 무조건 한번은 실행
-            struct frame *f = list_entry(next, struct frame, frame_elem);
-            struct page *p = f->page;
+        do {
+            struct frame* f = list_entry(next, struct frame, frame_elem);
+            struct page* p = f->page;
 
-            // 비어있는 프레임이면 바로 선택
             if (p == NULL) {
                 victim = f;
                 break;
@@ -189,23 +161,26 @@ static struct frame* vm_get_victim(void)
                 }
             }
 
-            next = get_next_frame_elem(next);
+            next = list_next(next);
+            if (next == list_end(&frame_table))
+                next = list_begin(&frame_table);
         } while (next != start);
 
-        // 다음 탐색 위치 설정
         if (victim == NULL) {
-            next = get_next_frame_elem(start);
+            next = list_next(start);
+            if (next == list_end(&frame_table))
+                next = list_begin(&frame_table);
             start = next;
         }
     }
 
-    // next를 victim 다음으로 이동
     if (victim != NULL) {
-        next = get_next_frame_elem(&victim->frame_elem);
+        next = list_next(&victim->frame_elem);
+        if (next == list_end(&frame_table))
+            next = list_begin(&frame_table);
     }
     return victim;
 }
-
 
 /* Evict one page and return the corresponding frame.
  * Return NULL on error.*/
@@ -213,6 +188,7 @@ static struct frame* vm_evict_frame(void)
 {
     struct frame* victim = vm_get_victim();
     /* TODO: swap out the victim and return the evicted frame. */
+
     if (victim == NULL || !swap_out(victim->page))
         return NULL;
 
@@ -232,7 +208,6 @@ static struct frame* vm_get_frame(void)
     if (kva == NULL) {
         return vm_evict_frame();
     }
-
     frame = (struct frame*)malloc(sizeof(struct frame));
     if (frame == NULL) {
         palloc_free_page(kva);
@@ -278,11 +253,9 @@ bool vm_try_handle_fault(struct intr_frame* f, void* addr, bool user, bool write
         page = spt_find_page(spt, addr);
         if (page == NULL)
             return false;
-        if (write && !page->writable)
+        if (write == 1 && page->writable == 0)
             return false;
-        if (!vm_do_claim_page(page))
-            return false;
-        return true;
+        return vm_do_claim_page(page);
     }
     return false;
 }
@@ -340,7 +313,6 @@ static bool vm_do_claim_page(struct page* page)
     }
 
     if (!swap_in(page, frame->kva)) {
-        /* swap_in 실패 시 정리 */
         pml4_clear_page(current->pml4, page->va);
         if (!frame->in_table) {
             lock_acquire(&frame_lock);
@@ -357,7 +329,7 @@ static bool vm_do_claim_page(struct page* page)
     return true;
 }
 
-uint64_t page_hash(const struct hash_elem* hash_e, void* aux)
+unsigned page_hash(const struct hash_elem* hash_e, void* aux)
 {
     struct page* page = hash_entry(hash_e, struct page, hash_elem);
     return hash_bytes(&page->va, sizeof(page->va));
@@ -388,52 +360,35 @@ bool supplemental_page_table_copy(struct supplemental_page_table* dst, struct su
         enum vm_type src_type = VM_TYPE(src_page->operations->type);
         void* upage = src_page->va;
         bool writable = src_page->writable;
-        
-        // 기본 과제에서는 mmap 상속 불필요. 
-        // 단, extra(cow) 구현 시에는 이 continue를 제거하고 
-        // 파일 객체 복제(file_reopen) 및 페이지 공유(Read-Only Mapping) 로직으로 대체해야 함.
-        if (src_type == VM_FILE)
+
+        if (page_get_type(src_page) == VM_FILE)
             continue;
-        
+
         if (src_type == VM_UNINIT) {
             struct uninit_page* src_uninit = &src_page->uninit;
-            // VM_FILE로 바뀔 UNINIT 페이지도 복사하지 않음
-            enum vm_type final_type = VM_TYPE(src_uninit->type);
-            if (final_type == VM_FILE)
+            if (VM_TYPE(src_uninit->type) == VM_FILE)
                 continue;
             if (src_uninit->aux != NULL) {
-                struct file_page* copy_aux = malloc(sizeof(struct file_page));
+                struct lazy_load_aux* copy_aux = malloc(sizeof(struct lazy_load_aux));
                 if (copy_aux == NULL)
-                    goto err;
-                memcpy(copy_aux, src_uninit->aux, sizeof(struct file_page));
-                if (!vm_alloc_page_with_initializer(src_uninit->type, upage, writable, src_uninit->init, copy_aux)) {
-                    if (src_uninit->init == lazy_load_segment) {
-                        lock_acquire(&filesys_lock);
-                        file_close(copy_aux->file);
-                        lock_release(&filesys_lock);
-                    }
-                    free(copy_aux);
-                    goto err;
-                }
+                    return false;
+                memcpy(copy_aux, src_uninit->aux, sizeof(struct lazy_load_aux));
+                if (!vm_alloc_page_with_initializer(src_uninit->type, upage, writable, src_uninit->init, copy_aux))
+                    return false;
             } else {
                 if (!vm_alloc_page(src_uninit->type, upage, writable))
-                    goto err;
+                    return false;
             }
             continue;
         }
         if (!vm_alloc_page(src_type, upage, writable))
-            goto err;
+            return false;
         if (!vm_claim_page(upage))
-            goto err;
+            return false;
         struct page* dst_page = spt_find_page(dst, upage);
         memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
     }
     return true;
-
-err:
-    /* 실패 시 이미 복사된 페이지들 정리 */
-    supplemental_page_table_kill(dst);
-    return false;
 }
 
 /* Free the resource hold by the supplemental page table */
@@ -451,15 +406,15 @@ void hash_desroy_action(struct hash_elem* hash_elem, void* aux)
     free(page);
 }
 
-void vm_free_frame(struct frame* frame)                               
-{                                                                     
-    ASSERT(frame != NULL);                                            
-    ASSERT(frame->page == NULL);                                      
-                                                                     
-    lock_acquire(&frame_lock);                                        
-    list_remove(&frame->frame_elem);                                  
-    lock_release(&frame_lock);                                        
-                                                                     
-    palloc_free_page(frame->kva);                                     
-    free(frame);                                                      
+void vm_free_frame(struct frame* frame)
+{
+    ASSERT(frame != NULL);
+    ASSERT(frame->page == NULL);
+
+    lock_acquire(&frame_lock);
+    list_remove(&frame->frame_elem);
+    lock_release(&frame_lock);
+
+    palloc_free_page(frame->kva);
+    free(frame);
 }
