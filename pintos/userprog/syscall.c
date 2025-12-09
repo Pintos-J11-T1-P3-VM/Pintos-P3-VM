@@ -338,7 +338,7 @@ static unsigned int tell(int fd)
     return -1;
 }
 
-static void* mmap(int fd, void* addr, size_t length, int writable, off_t offset)
+static void* mmap(void* addr, size_t length, int writable, int fd, off_t offset)
 { // P3 mmap 설명: On failure, it must return NULL which is not a valid address to map a file.
     if (fd < 2 || addr == NULL || pg_ofs(addr) != 0 || length == 0 || is_kernel_vaddr(addr))
         return NULL;
@@ -433,7 +433,7 @@ void syscall_handler(struct intr_frame* f)
         f->R.rax = tell(f->R.rdi);
         break;
     case SYS_MMAP:
-        f->R.rax = (uint64_t)mmap(f->R.r10, f->R.rdi, f->R.rsi, f->R.rdx, f->R.r8);
+        f->R.rax = (uint64_t)mmap((void*)f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
         break;
     case SYS_MUNMAP:
         munmap(f->R.rdi);
