@@ -54,6 +54,7 @@ static struct frame* vm_evict_frame(void);
 static bool rollback_claim(struct thread* current, struct frame* frame, struct page* page, bool mapping_set);
 static struct frame* vm_get_victim(void);
 static struct frame* clock(struct list_elem* start);
+static struct list_elem* get_next(struct list_elem* elem);
 
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
@@ -125,6 +126,14 @@ void spt_remove_page(struct supplemental_page_table* spt, struct page* page)
     return;
 }
 
+static struct list_elem* get_next(struct list_elem* elem)
+{
+    struct list_elem* next_elem = list_next(elem);
+    if (next_elem == list_end(&frame_table))
+        next_elem = list_begin(&frame_table);
+    return next_elem;
+}
+
 /* Get the struct frame, that will be evicted. */
 static struct frame* vm_get_victim(void)
 {
@@ -180,23 +189,17 @@ static struct frame* clock(struct list_elem* start)
                 }
             }
 
-            next = list_next(next);
-            if (next == list_end(&frame_table))
-                next = list_begin(&frame_table);
+            next = get_next(next);
         } while (next != start);
 
         if (victim == NULL) {
-            next = list_next(start);
-            if (next == list_end(&frame_table))
-                next = list_begin(&frame_table);
+            next = get_next(start);
             start = next;
         }
     }
 
     if (victim != NULL) {
-        next = list_next(&victim->frame_elem);
-        if (next == list_end(&frame_table))
-            next = list_begin(&frame_table);
+        next = get_next(&victim->frame_elem);
     }
     return victim;
 }
