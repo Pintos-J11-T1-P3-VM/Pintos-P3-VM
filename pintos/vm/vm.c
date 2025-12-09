@@ -49,10 +49,11 @@ enum vm_type page_get_type(struct page* page)
 }
 
 /* Helpers */
-static struct frame* vm_get_victim(void);
 static bool vm_do_claim_page(struct page* page);
 static struct frame* vm_evict_frame(void);
 static bool rollback_claim(struct thread* current, struct frame* frame, struct page* page, bool mapping_set);
+static struct frame* vm_get_victim(void);
+static struct frame* clock(struct list_elem* start);
 
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
@@ -128,13 +129,17 @@ void spt_remove_page(struct supplemental_page_table* spt, struct page* page)
 static struct frame* vm_get_victim(void)
 {
     ASSERT(!list_empty(&frame_table));
-
     if (next == NULL || next == list_end(&frame_table))
         next = list_begin(&frame_table);
 
     struct list_elem* start = next;
-    struct frame* victim = NULL;
+    return clock(start);
+}
 
+static struct frame* clock(struct list_elem* start)
+{
+    ASSERT(!list_empty(&frame_table));
+    struct frame* victim = NULL;
     /*
         eviction 우선순위
           1) 비어있는 프레임
@@ -321,13 +326,13 @@ static bool vm_do_claim_page(struct page* page)
     return true;
 }
 
-unsigned page_hash(const struct hash_elem* hash_e, void* aux)
+static uint64_t page_hash(const struct hash_elem* hash_e, void* aux UNUSED)
 {
     struct page* page = hash_entry(hash_e, struct page, hash_elem);
     return hash_bytes(&page->va, sizeof(page->va));
 }
 
-bool page_less(const struct hash_elem* a, const struct hash_elem* b, void* aux)
+static bool page_less(const struct hash_elem* a, const struct hash_elem* b, void* aux UNUSED)
 {
     struct page* page_a = hash_entry(a, struct page, hash_elem);
     struct page* page_b = hash_entry(b, struct page, hash_elem);
