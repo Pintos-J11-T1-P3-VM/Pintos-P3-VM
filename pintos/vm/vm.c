@@ -91,14 +91,12 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void* upage, bool writabl
         }
         return true;
     }
-err:
     return false;
 }
 
 /* Find VA from spt and return page. On error, return NULL. */
 struct page* spt_find_page(struct supplemental_page_table* spt, void* va)
 {
-    struct page* page = NULL;
     /* TODO: Fill this function. */
     struct hash_elem* hash_e;
     struct page tmp_page;
@@ -401,9 +399,12 @@ void vm_free_frame(struct frame* frame)
     ASSERT(frame != NULL);
     ASSERT(frame->page == NULL);
 
-    lock_acquire(&frame_lock);
-    list_remove(&frame->frame_elem);
-    lock_release(&frame_lock);
+    if (frame->in_table) {
+        lock_acquire(&frame_lock);
+        list_remove(&frame->frame_elem);
+        lock_release(&frame_lock);
+        frame->in_table = false;
+    }
 
     palloc_free_page(frame->kva);
     free(frame);

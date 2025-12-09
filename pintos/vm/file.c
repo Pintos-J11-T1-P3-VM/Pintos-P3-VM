@@ -2,11 +2,13 @@
 
 #include "vm/vm.h"
 #include "userprog/process.h"
+#include "userprog/syscall.h"
+#include "threads/mmu.h"
+#include "threads/malloc.h"
+#include <string.h>
 static bool file_backed_swap_in(struct page* page, void* kva);
 static bool file_backed_swap_out(struct page* page);
 static void file_backed_destroy(struct page* page);
-
-#define PGSIZE 4096
 
 /* DO NOT MODIFY this struct */
 static const struct page_operations file_ops = {
@@ -52,11 +54,14 @@ bool file_backed_initializer(struct page* page, enum vm_type type, void* kva)
 static bool file_backed_swap_in(struct page* page, void* kva)
 {
     struct file_page* file_page UNUSED = &page->file;
+    bool success = false;
+    lock_acquire(&filesys_lock);
     if (file_read_at(file_page->file, kva, file_page->length, file_page->offset) == (off_t)file_page->length) {
         memset(kva + file_page->length, 0, PGSIZE - file_page->length);
-        return true;
+        success = true;
     }
-    return false;
+    lock_release(&filesys_lock);
+    return success;
 }
 
 /* Swap out the page by writeback contents to the file. */
@@ -65,7 +70,9 @@ static bool file_backed_swap_out(struct page* page)
     struct file_page* file_page UNUSED = &page->file;
     struct thread* owner = page->accessible_thread;
     if (pml4_is_dirty(owner->pml4, page->va)) {
+        lock_acquire(&filesys_lock);
         file_write_at(file_page->file, page->frame->kva, file_page->length, file_page->offset);
+        lock_release(&filesys_lock);
         pml4_set_dirty(owner->pml4, page->va, false);
     }
     pml4_clear_page(owner->pml4, page->va);
@@ -80,7 +87,9 @@ static void file_backed_destroy(struct page* page)
     if (page->frame != NULL) {
         struct thread* owner = page->accessible_thread;
         if (pml4_is_dirty(owner->pml4, page->va)) {
+            lock_acquire(&filesys_lock);
             file_write_at(file_page->file, page->frame->kva, file_page->length, file_page->offset);
+            lock_release(&filesys_lock);
             pml4_set_dirty(owner->pml4, page->va, false);
         }
         pml4_clear_page(owner->pml4, page->va);

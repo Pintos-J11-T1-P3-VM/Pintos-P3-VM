@@ -750,7 +750,7 @@ static bool lazy_load_segment(struct page* page, void* aux)
     if (file_read_at(arg->file, page->frame->kva, arg->page_read_bytes, arg->ofs) != (int)arg->page_read_bytes) {
         if (flag)
             lock_release(&filesys_lock);
-        palloc_free_page(page);
+        palloc_free_page(page->frame->kva);
         return false;
     }
     if (flag)
