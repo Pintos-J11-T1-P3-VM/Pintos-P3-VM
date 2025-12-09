@@ -135,6 +135,21 @@ static struct frame* vm_get_victim(void)
     struct list_elem* start = next;
     struct frame* victim = NULL;
 
+    /*
+        eviction 우선순위
+          1) 비어있는 프레임
+          2) 접근 비트 0인 페이지
+             - dirty 0 우선, 그래도 없으면 dirty 1
+          3) 접근 비트 1이면 접근 비트를 0으로 내리고 다음으로 이동
+
+        trial 의미
+          - 첫 바퀴(trial=0)에서 못 찾는 경우:
+              * 모든 페이지가 accessed=1이어서 모두 0으로 내린 상황
+              * accessed=0이더라도 모두 dirty=1인 경우
+          - 두 번째 바퀴(trial=1)에서는 accessed=0인 페이지를 dirty 여부와 상관없이 처음 만나는 대로 선택
+
+        → second chance 개념을 clock으로 구현
+    */
     for (int trial = 0; trial < 2 && victim == NULL; trial++) {
         do {
             struct frame* f = list_entry(next, struct frame, frame_elem);
