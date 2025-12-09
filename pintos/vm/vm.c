@@ -1,5 +1,6 @@
 /* vm.c: Generic interface for virtual memory objects. */
 
+#include "filesys/file.h"
 #include "list.h"
 #include "stddef.h"
 #include "threads/malloc.h"
@@ -405,10 +406,11 @@ bool supplemental_page_table_copy(struct supplemental_page_table* dst, struct su
                 if (copy_aux == NULL)
                     goto err;
                 memcpy(copy_aux, src_uninit->aux, sizeof(struct file_page));
-                
-                // lazy_load_segment의 경우 file 객체를 reopen하여 독립적인 참조 생성
+                // fork할때, lazy_load_segment의 경우 exec_file 객체를 duplicate하여 독립적인 참조 생성
                 if (src_uninit->init == lazy_load_segment) {
-                    copy_aux->file = file_reopen(copy_aux->file);
+                    lock_acquire(&filesys_lock);
+                    copy_aux->file = file_duplicate(copy_aux->file);
+                    lock_release(&filesys_lock);
                     if (copy_aux->file == NULL) {
                         free(copy_aux);
                         goto err;
