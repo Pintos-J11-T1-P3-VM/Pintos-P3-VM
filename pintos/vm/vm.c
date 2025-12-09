@@ -52,6 +52,7 @@ enum vm_type page_get_type(struct page* page)
 static struct frame* vm_get_victim(void);
 static bool vm_do_claim_page(struct page* page);
 static struct frame* vm_evict_frame(void);
+static bool rollback_claim(struct thread* current, struct frame* frame, struct page* page, bool mapping_set);
 
 /* Create the pending page object with initializer. If you want to create a
  * page, do not create it directly and make it through this function or
@@ -298,34 +299,12 @@ static bool vm_do_claim_page(struct page* page)
 
     /* TODO: Insert page table entry to map page's VA to frame's PA. */
     struct thread* current = thread_current();
-    if (!pml4_set_page(current->pml4, page->va, frame->kva, page->writable)) {
-        if (!frame->in_table) {
-            lock_acquire(&frame_lock);
-            list_remove(&frame->frame_elem);
-            lock_release(&frame_lock);
-            palloc_free_page(frame->kva);
-            free(frame);
-        } else {
-            frame->page = NULL;
-        }
-        page->frame = NULL;
-        return false;
-    }
+    if (!pml4_set_page(current->pml4, page->va, frame->kva, page->writable))
+        return rollback_claim(current, frame, page, false);
 
-    if (!swap_in(page, frame->kva)) {
-        pml4_clear_page(current->pml4, page->va);
-        if (!frame->in_table) {
-            lock_acquire(&frame_lock);
-            list_remove(&frame->frame_elem);
-            lock_release(&frame_lock);
-            palloc_free_page(frame->kva);
-            free(frame);
-        } else {
-            frame->page = NULL;
-        }
-        page->frame = NULL;
-        return false;
-    }
+    if (!swap_in(page, frame->kva))
+        return rollback_claim(current, frame, page, true);
+
     return true;
 }
 
@@ -406,6 +385,17 @@ void hash_desroy_action(struct hash_elem* hash_elem, void* aux)
     free(page);
 }
 
+static bool rollback_claim(struct thread* current, struct frame* frame, struct page* page, bool mapping_set)
+{
+    if (mapping_set)
+        pml4_clear_page(current->pml4, page->va);
+
+    page->frame = NULL;
+    frame->page = NULL;
+
+    vm_free_frame(frame);
+    return false;
+}
 void vm_free_frame(struct frame* frame)
 {
     ASSERT(frame != NULL);
