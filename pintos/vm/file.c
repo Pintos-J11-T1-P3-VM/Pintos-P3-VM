@@ -76,17 +76,16 @@ static void file_backed_destroy(struct page* page)
 {
     struct file_page* file_page UNUSED = &page->file;
     if (page->frame != NULL) {
-        // enum intr_level old_level = intr_disable();
         if (pml4_is_dirty(thread_current()->pml4, page->va)) {
             file_write_at(file_page->file, page->frame->kva, file_page->length, file_page->offset);
             pml4_set_dirty(thread_current()->pml4, page->va, false);
         }
         pml4_clear_page(thread_current()->pml4, page->va);
-        palloc_free_page(page->frame->kva);
         page->frame->page = NULL;
+        list_remove(&page->frame->elem);
+        palloc_free_page(page->frame->kva);
         free(page->frame);
-
-        // intr_set_level(old_level);
+        page->frame = NULL;
     }
     return;
 }

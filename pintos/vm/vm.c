@@ -7,14 +7,17 @@
 #include "threads/vaddr.h"
 #include "string.h"
 #include "userprog/process.h"
+#include "list.h"
 #define STACK_MAX_SIZE (1 << 20)
 
+static struct list frame_table;
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void vm_init(void)
 {
     vm_anon_init();
     vm_file_init();
+    list_init(&frame_table);
 #ifdef EFILESYS /* For project 4 */
     pagecache_init();
 #endif
@@ -112,9 +115,12 @@ void spt_remove_page(struct supplemental_page_table* spt, struct page* page)
 /* Get the struct frame, that will be evicted. */
 static struct frame* vm_get_victim(void)
 {
-    struct frame* victim = NULL;
     /* TODO: The policy for eviction is up to you. */
+    if (list_empty(&frame_table))
+        return NULL;
 
+    struct list_elem* victim_elem = list_pop_front(&frame_table);
+    struct frame* victim = list_entry(victim_elem, struct frame, elem);
     return victim;
 }
 
@@ -123,9 +129,20 @@ static struct frame* vm_get_victim(void)
 static struct frame* vm_evict_frame(void)
 {
     struct frame* victim UNUSED = vm_get_victim();
+    if (victim == NULL) {
+        return NULL;
+    }
     /* TODO: swap out the victim and return the evicted frame. */
 
-    return NULL;
+    struct page* victim_page = victim->page;
+
+    if (!swap_out(victim_page)) {
+        return NULL;
+    }
+
+    victim->page = NULL;
+
+    return victim;
 }
 
 /* palloc() and get frame. If there is no available page, evict the page
@@ -138,7 +155,11 @@ static struct frame* vm_get_frame(void)
     /* TODO: Fill this function. */
     void* kva = palloc_get_page(PAL_USER);
     if (kva == NULL) {
-        PANIC("todo");
+        struct frame* evicted_frame = vm_evict_frame();
+        if (evicted_frame != NULL) {
+            list_push_back(&frame_table, &evicted_frame->elem);
+        }
+        return evicted_frame;
     }
     frame = (struct frame*)malloc(sizeof(struct frame));
     if (frame == NULL) {
@@ -148,6 +169,8 @@ static struct frame* vm_get_frame(void)
     frame->kva = kva;
     frame->page = NULL;
     ASSERT(frame->page == NULL);
+
+    list_push_back(&frame_table, &frame->elem);
     return frame;
 }
 
@@ -214,6 +237,9 @@ bool vm_claim_page(void* va)
 static bool vm_do_claim_page(struct page* page)
 {
     struct frame* frame = vm_get_frame();
+    if (frame == NULL) {
+        return false;
+    }
 
     /* Set links */
     frame->page = page;
